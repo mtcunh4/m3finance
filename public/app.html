@@ -1836,7 +1836,7 @@ function lerValorMascarado(input) {
    O texto aparece sozinho no rodapé do menu lateral. */
 const APP_VERSION = "5.2";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Receitas em azul, vencidas no topo das listas e nova tela de entrada";
+const APP_VERSION_DESC = "Receitas e saldos positivos em azul, vencidas no topo das listas e nova tela de entrada";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -2298,8 +2298,8 @@ async function renderDashboardView(container) {
     const despesaAberta = despesasFiltradas.filter(l => l.status !== "Pago").reduce((s,l)=>s+l.valor,0);
     grid.appendChild(kpiCard("Despesas em aberto", fmtMoney(despesaAberta), "", despesaAberta > 0 ? "neg" : ""));
     grid.appendChild(kpiCard("Faturas em aberto", fmtMoney(faturasAbertas), "", faturasAbertas > 0 ? "neg" : ""));
-    if (cartaoFiltro) grid.appendChild(kpiCard(kpiSaldoLabel, fmtMoney(kpiSaldoValor), kpiSaldoSub, kpiSaldoValor >= 0 ? "pos" : "neg"));
-    grid.appendChild(kpiCard("Saldo previsto", fmtMoney(saldoPrevisto), "Receitas previstas − despesas previstas − faturas", saldoPrevisto >= 0 ? "pos" : "neg"));
+    if (cartaoFiltro) grid.appendChild(kpiCard(kpiSaldoLabel, fmtMoney(kpiSaldoValor), kpiSaldoSub, kpiSaldoValor >= 0 ? "info" : "neg"));
+    grid.appendChild(kpiCard("Saldo previsto", fmtMoney(saldoPrevisto), "Receitas previstas − despesas previstas − faturas", saldoPrevisto >= 0 ? "info" : "neg"));
     grid.appendChild(kpiCard("Parcelas futuras", fmtMoney(parcelasFuturas), "A partir do próximo mês"));
     kpiWrap.appendChild(grid);
 
@@ -2428,7 +2428,7 @@ async function renderCharts({ cartaoFiltro, anoSel, semCartao = false }) {
         datasets: [
           { label: "Receitas", data: receitasPorMes, backgroundColor: "#2b7aa0" },
           { label: "Despesas", data: despesasPorMes, backgroundColor: "#dc2626" },
-          { label: "Saldo", data: saldoPorMes, type: "line", borderColor: "#0f2a4a", backgroundColor: "#0f2a4a", tension: .3 }
+          { label: "Saldo", data: saldoPorMes, type: "line", borderColor: (document.documentElement.dataset.theme === "dark" ? "#cbd5e1" : "#0f2a4a"), backgroundColor: (document.documentElement.dataset.theme === "dark" ? "#cbd5e1" : "#0f2a4a"), tension: .3 }
         ]
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
@@ -2447,7 +2447,7 @@ async function renderCharts({ cartaoFiltro, anoSel, semCartao = false }) {
         <td>${mesRefAbrev(m)}</td>
         <td class="num money info">${fmtMoney(receitasPorMes[i])}</td>
         <td class="num money neg">${fmtMoney(despesasPorMes[i])}</td>
-        <td class="num money ${total >= 0 ? "pos" : "neg"}" style="font-weight:700;">${fmtMoney(total)}</td>
+        <td class="num money ${total >= 0 ? "info" : "neg"}" style="font-weight:700;">${fmtMoney(total)}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -2617,7 +2617,7 @@ async function renderCartoesView(container) {
     const grid = el("div", { class: "grid-cards" });
     grid.appendChild(kpiCard("Limite total", fmtMoney(totalLimite), ""));
     grid.appendChild(kpiCard("Total utilizado", fmtMoney(totalUsado), "", "neg"));
-    grid.appendChild(kpiCard("Total disponível", fmtMoney(totalDisp), "", "pos"));
+    grid.appendChild(kpiCard("Total disponível", fmtMoney(totalDisp), "", totalDisp >= 0 ? "info" : "neg"));
     grid.appendChild(kpiCard("Utilização média", `${totalLimite ? ((totalUsado/totalLimite)*100).toFixed(0) : 0}%`, ""));
     resumoWrap.appendChild(grid);
   }
@@ -4940,7 +4940,7 @@ async function renderContasView(container) {
       const saldo = await calcularSaldoConta(c.id);
       const card = el("div", { class: "kpi-card" });
       card.appendChild(el("div", { class: "kpi-label" }, c.nomeConta));
-      card.appendChild(el("div", { class: "kpi-value " + (saldo >= 0 ? "pos" : "neg") }, fmtMoney(saldo)));
+      card.appendChild(el("div", { class: "kpi-value " + (saldo >= 0 ? "info" : "neg") }, fmtMoney(saldo)));
       card.appendChild(el("div", { class: "kpi-sub" }, `${c.banco} · ${c.tipo}`));
       card.appendChild(el("button", {
         class: "btn-secondary", style: "margin-top:12px; width:100%;",
@@ -4992,7 +4992,7 @@ async function abrirExtratoConta(conta) {
         const resumo = el("div", { class: "grid-cards", style: "margin-bottom:14px;" });
         resumo.appendChild(kpiCard("Total recebido", fmtMoney(totalRecebido), "Só receitas já recebidas", "info"));
         resumo.appendChild(kpiCard("Total pago", fmtMoney(totalPago), "Só despesas já pagas", "neg"));
-        resumo.appendChild(kpiCard("Encontro (recebido − pago)", fmtMoney(saldoEncontro), "", saldoEncontro >= 0 ? "pos" : "neg"));
+        resumo.appendChild(kpiCard("Encontro (recebido − pago)", fmtMoney(saldoEncontro), "", saldoEncontro >= 0 ? "info" : "neg"));
         contEl.appendChild(resumo);
 
         // Calcula o saldo corrente cronologicamente (do mais antigo pro mais
@@ -5019,7 +5019,7 @@ async function abrirExtratoConta(conta) {
             <td>${cat ? cat.nome : "—"}</td>
             <td><span class="badge ${l.tipo === "receita" ? "blue" : "gray"}">${l.tipo === "receita" ? "Receita" : "Despesa"}</span>${!realizado ? ` <span class="badge amber" style="margin-left:4px;">${l.tipo === "receita" ? "previsto" : "previsto"}</span>` : ""}</td>
             <td class="num money ${l.tipo === "receita" ? "info" : ""}">${fmtMoney(l.valor)}</td>
-            <td class="num money ${saldoPorId[l.id] >= 0 ? "pos" : "neg"}">${fmtMoney(saldoPorId[l.id])}</td>
+            <td class="num money ${saldoPorId[l.id] >= 0 ? "info" : "neg"}">${fmtMoney(saldoPorId[l.id])}</td>
           `;
           const tdAcao = el("td");
           tdAcao.appendChild(renderKebabMenu([
@@ -7083,7 +7083,7 @@ async function renderRelatoriosView(container) {
     grid.appendChild(kpiCard("Faturas em aberto", fmtMoney(r.faturasAbertas), "", r.faturasAbertas > 0 ? "neg" : ""));
     grid.appendChild(kpiCard("Contas a pagar", fmtMoney(r.totalCP), "", "neg"));
     grid.appendChild(kpiCard("Contas a receber", fmtMoney(r.totalCR), "", "info"));
-    grid.appendChild(kpiCard("Resultado do mês", fmtMoney(r.resultado), "Receitas - Despesas", r.resultado >= 0 ? "pos" : "neg"));
+    grid.appendChild(kpiCard("Resultado do mês", fmtMoney(r.resultado), "Receitas - Despesas", r.resultado >= 0 ? "info" : "neg"));
     panel.appendChild(grid);
     mensalWrap.appendChild(panel);
   }
@@ -7124,7 +7124,7 @@ async function renderRelatoriosView(container) {
     for (let m = 1; m <= 12; m++) {
       const resultado = receitasPorMes[m-1] - despesasPorMes[m-1];
       const tr = el("tr");
-      tr.innerHTML = `<td>${MESES_PT[m-1]}</td><td class="num money info">${fmtMoney(receitasPorMes[m-1])}</td><td class="num money neg">${fmtMoney(despesasPorMes[m-1])}</td><td class="num money ${resultado>=0?"pos":"neg"}">${fmtMoney(resultado)}</td>`;
+      tr.innerHTML = `<td>${MESES_PT[m-1]}</td><td class="num money info">${fmtMoney(receitasPorMes[m-1])}</td><td class="num money neg">${fmtMoney(despesasPorMes[m-1])}</td><td class="num money ${resultado>=0?"info":"neg"}">${fmtMoney(resultado)}</td>`;
       tb.appendChild(tr);
     }
     t.appendChild(tb);
@@ -7169,7 +7169,7 @@ async function renderRelatoriosView(container) {
     anos.forEach((ano, i) => {
       const resultado = receitasPorAno[i] - despesasPorAno[i];
       const tr = el("tr");
-      tr.innerHTML = `<td>${ano}</td><td class="num money info">${fmtMoney(receitasPorAno[i])}</td><td class="num money neg">${fmtMoney(despesasPorAno[i])}</td><td class="num money ${resultado>=0?"pos":"neg"}">${fmtMoney(resultado)}</td>`;
+      tr.innerHTML = `<td>${ano}</td><td class="num money info">${fmtMoney(receitasPorAno[i])}</td><td class="num money neg">${fmtMoney(despesasPorAno[i])}</td><td class="num money ${resultado>=0?"info":"neg"}">${fmtMoney(resultado)}</td>`;
       tb.appendChild(tr);
     });
     t.appendChild(tb);
@@ -7221,7 +7221,7 @@ async function renderRelatoriosView(container) {
       <td class="num money">${fmtMoney(r.totalFaturas)}</td>
       <td class="num money pos">${fmtMoney(r.faturasPagas)}</td>
       <td class="num money ${r.faturasAbertas>0?"neg":""}">${fmtMoney(r.faturasAbertas)}</td>
-      <td class="num money ${saldo>=0?"pos":"neg"}">${fmtMoney(saldo)}</td>
+      <td class="num money ${saldo>=0?"info":"neg"}">${fmtMoney(saldo)}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -7388,7 +7388,7 @@ async function renderRelatorioPorConta(container) {
   for (const c of contas) {
     const saldo = await calcularSaldoConta(c.id);
     const tr = el("tr");
-    tr.innerHTML = `<td>${c.nomeConta}</td><td>${c.tipo}</td><td class="num money ${saldo>=0?"pos":"neg"}">${fmtMoney(saldo)}</td>`;
+    tr.innerHTML = `<td>${c.nomeConta}</td><td>${c.tipo}</td><td class="num money ${saldo>=0?"info":"neg"}">${fmtMoney(saldo)}</td>`;
     tbody.appendChild(tr);
   }
   if (!tbody.children.length) tbody.appendChild(el("tr", { class: "empty-row" }, el("td", { colspan: "3" }, "Nenhuma conta cadastrada.")));
