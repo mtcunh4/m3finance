@@ -1,0 +1,414 @@
+// Tabelas do M3 Finance, lidas do banco com `npx prisma db pull`. A estrutura e as funções com as
+// regras de acesso ficam nas migrações (prisma/migrations); mude o banco sempre por uma migração nova.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["public"]
+}
+
+model abastecimentos {
+  id           String     @id
+  workspace_id String     @db.Uuid
+  data         DateTime?  @db.Date
+  valor        Decimal?   @default(0) @db.Decimal
+  litros       Decimal?   @default(0) @db.Decimal
+  precoLitro   Decimal?   @db.Decimal
+  categoriaId  String?
+  contaId      String?
+  obs          String?
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "abastecimentos_ws")
+  @@schema("public")
+}
+
+model acessos {
+  id      BigInt   @id @default(autoincrement())
+  at      DateTime @default(now()) @db.Timestamptz(6)
+  user_id String?  @db.Uuid
+  email   String?
+  evento  String
+  detalhe String?
+
+  @@index([at(sort: Desc)], map: "acessos_at")
+  @@schema("public")
+}
+
+model bet_lancamentos {
+  id           String     @id
+  workspace_id String     @db.Uuid
+  tipo         String?    @default("Depósito")
+  valor        Decimal?   @default(0) @db.Decimal
+  data         DateTime?  @db.Date
+  obs          String?
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "bet_lancamentos_ws")
+  @@schema("public")
+}
+
+model cartoes {
+  id             String     @id
+  user_id        String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  nome           String?
+  banco          String?
+  bandeira       String?
+  ultimosDigitos String?
+  limiteTotal    Decimal?   @default(0) @db.Decimal
+  diaFechamento  Int?       @default(5)
+  diaVencimento  Int?       @default(12)
+  cor            String?
+  status         String?    @default("Ativo")
+  created_at     DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id   String     @db.Uuid
+  usuarios       usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces     workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "cartoes_ws")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model categorias {
+  id            String     @id
+  user_id       String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  nome          String?
+  tipo          String?
+  subcategorias Json?      @default("[]")
+  created_at    DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id  String     @db.Uuid
+  usuarios      usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces    workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "categorias_ws")
+  @@schema("public")
+}
+
+model comprasCartao {
+  id           String     @id
+  user_id      String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  cartaoId     String?
+  data         DateTime?  @db.Date
+  descricao    String?
+  categoriaId  String?
+  valorTotal   Decimal?   @db.Decimal
+  numParcelas  Int?       @default(1)
+  obs          String?
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id String     @db.Uuid
+  usuarios     usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "comprascartao_ws")
+  @@schema("public")
+}
+
+model config {
+  user_id      String?    @db.Uuid
+  nome         String?    @default("Controle Financeiro")
+  subtitulo    String?    @default("")
+  logo         String?
+  moeda        String?    @default("BRL")
+  corDestaque  String?    @default("#1d4ed8")
+  tema         String?
+  updated_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id String     @unique @db.Uuid
+  usuarios     usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model consorcios {
+  id              String     @id
+  workspace_id    String     @db.Uuid
+  nome            String?    @default("Consórcio")
+  carta           Decimal?   @default(0) @db.Decimal
+  taxaAdm         Decimal?   @default(0) @db.Decimal
+  numParcelas     Int?       @default(1)
+  lanceEmbutido   Decimal?   @default(0) @db.Decimal
+  lancePercentual Decimal?   @default(0) @db.Decimal
+  parcelasPagas   Int?       @default(0)
+  status          String?    @default("Ativo")
+  obs             String?
+  created_at      DateTime?  @default(now()) @db.Timestamptz(6)
+  workspaces      workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "consorcios_ws")
+  @@schema("public")
+}
+
+model contas {
+  id           String     @id
+  user_id      String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  banco        String?
+  agencia      String?
+  conta        String?
+  nomeConta    String?
+  saldoInicial Decimal?   @default(0) @db.Decimal
+  tipo         String?    @default("Conta corrente")
+  status       String?    @default("Ativa")
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id String     @db.Uuid
+  usuarios     usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "contas_ws")
+  @@schema("public")
+}
+
+model contasPagar {
+  id             String     @id
+  user_id        String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  descricao      String?
+  categoriaId    String?
+  vencimento     DateTime?  @db.Date
+  valor          Decimal?   @db.Decimal
+  status         String?    @default("Em aberto")
+  dataPagamento  DateTime?  @db.Date
+  formaPagamento String?
+  created_at     DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id   String     @db.Uuid
+  pagoDe         String?
+  usuarios       usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces     workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "contaspagar_ws")
+  @@schema("public")
+}
+
+model contasReceber {
+  id              String     @id
+  user_id         String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  cliente         String?
+  descricao       String?
+  valor           Decimal?   @db.Decimal
+  vencimento      DateTime?  @db.Date
+  dataRecebimento DateTime?  @db.Date
+  status          String?    @default("Pendente")
+  created_at      DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id    String     @db.Uuid
+  usuarios        usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces      workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "contasreceber_ws")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model convites_pendentes {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspace_id  String     @db.Uuid
+  email         String
+  papel         String     @default("editor")
+  convidado_por String?    @db.Uuid
+  created_at    DateTime?  @default(now()) @db.Timestamptz(6)
+  usuarios      usuarios?  @relation(fields: [convidado_por], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  workspaces    workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([workspace_id, email])
+  @@schema("public")
+}
+
+model emprestimos {
+  id                  String     @id
+  workspace_id        String     @db.Uuid
+  tipo                String?    @default("Empréstimo")
+  nome                String?    @default("Empréstimo")
+  valorEmprestado     Decimal?   @default(0) @db.Decimal
+  numParcelas         Int?       @default(1)
+  valorParcela        Decimal?   @default(0) @db.Decimal
+  taxaMensal          Decimal?   @db.Decimal
+  dataPrimeiraParcela DateTime?  @db.Date
+  categoriaId         String?
+  contaId             String?
+  status              String?    @default("Ativo")
+  obs                 String?
+  created_at          DateTime?  @default(now()) @db.Timestamptz(6)
+  workspaces          workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "emprestimos_ws")
+  @@schema("public")
+}
+
+model faturaPagamentos {
+  id            String     @id
+  user_id       String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  cartaoId      String?
+  mesReferencia String?
+  valorPago     Decimal?   @db.Decimal
+  data          DateTime?  @db.Date
+  contaId       String?
+  obs           String?
+  created_at    DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id  String     @db.Uuid
+  usuarios      usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces    workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "faturapagamentos_ws")
+  @@schema("public")
+}
+
+model historico {
+  id           String     @id
+  user_id      String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  tipo         String?
+  entidade     String?
+  descricao    String?
+  quando       DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id String     @db.Uuid
+  usuarios     usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "historico_ws")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model lancamentos {
+  id                    String     @id
+  user_id               String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  tipo                  String?
+  data                  DateTime?  @db.Date
+  descricao             String?
+  categoriaId           String?
+  valor                 Decimal?   @db.Decimal
+  contaId               String?
+  formaPagamento        String?
+  status                String?
+  dataRecebimento       DateTime?  @db.Date
+  recorrente            Boolean?   @default(false)
+  recorrenciaId         String?
+  recorrenciaFrequencia String?
+  isTransferencia       Boolean?   @default(false)
+  transferenciaId       String?
+  obs                   String?
+  created_at            DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id          String     @db.Uuid
+  mesReferencia         String?
+  recorrenciaSemPrazo   Boolean?   @default(false)
+  subcategoria          String?
+  numero                Int?
+  totalParcelas         Int?
+  dataPagamento         DateTime?  @db.Date
+  emprestimoId          String?
+  abastecimentoId       String?
+  tipoItem              String?
+  pagoDe                String?
+  usuarios              usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces            workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "lancamentos_ws")
+  @@schema("public")
+}
+
+model notas {
+  id           String     @id
+  workspace_id String     @db.Uuid
+  titulo       String?    @default("Sem título")
+  conteudo     String?    @default("")
+  fixada       Boolean?   @default(false)
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "notas_ws")
+  @@schema("public")
+}
+
+model parcelas {
+  id            String     @id
+  user_id       String?    @default(dbgenerated("auth.uid()")) @db.Uuid
+  compraId      String?
+  cartaoId      String?
+  numero        Int?
+  totalParcelas Int?
+  valor         Decimal?   @db.Decimal
+  mesReferencia String?
+  categoriaId   String?
+  descricao     String?
+  created_at    DateTime?  @default(now()) @db.Timestamptz(6)
+  workspace_id  String     @db.Uuid
+  usuarios      usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  workspaces    workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workspace_id], map: "parcelas_ws")
+  @@schema("public")
+}
+
+model usuarios {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String               @unique
+  nome               String               @default("")
+  senha_hash         String?
+  ativo              Boolean              @default(true)
+  criado_em          DateTime             @default(now()) @db.Timestamptz(6)
+  ultimo_acesso      DateTime?            @db.Timestamptz(6)
+  cartoes            cartoes[]
+  categorias         categorias[]
+  comprasCartao      comprasCartao[]
+  config             config[]
+  contas             contas[]
+  contasPagar        contasPagar[]
+  contasReceber      contasReceber[]
+  convites_pendentes convites_pendentes[]
+  faturaPagamentos   faturaPagamentos[]
+  historico          historico[]
+  lancamentos        lancamentos[]
+  parcelas           parcelas[]
+  workspace_members  workspace_members[]
+  workspaces         workspaces[]
+
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model workspace_members {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspace_id String     @db.Uuid
+  user_id      String     @db.Uuid
+  papel        String     @default("editor")
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  usuarios     usuarios   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([workspace_id, user_id])
+  @@schema("public")
+}
+
+model workspaces {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome               String               @default("Meu Espaço")
+  owner_id           String?              @db.Uuid
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  abastecimentos     abastecimentos[]
+  bet_lancamentos    bet_lancamentos[]
+  cartoes            cartoes[]
+  categorias         categorias[]
+  comprasCartao      comprasCartao[]
+  config             config?
+  consorcios         consorcios[]
+  contas             contas[]
+  contasPagar        contasPagar[]
+  contasReceber      contasReceber[]
+  convites_pendentes convites_pendentes[]
+  emprestimos        emprestimos[]
+  faturaPagamentos   faturaPagamentos[]
+  historico          historico[]
+  lancamentos        lancamentos[]
+  notas              notas[]
+  parcelas           parcelas[]
+  workspace_members  workspace_members[]
+  usuarios           usuarios?            @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
