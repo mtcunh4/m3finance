@@ -1897,9 +1897,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.9";
+const APP_VERSION = "5.10";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Menu da conta no pé da barra lateral (configurações, senha, modo escuro, ajuda, sair) e opção de fechar a barra lateral";
+const APP_VERSION_DESC = "Contas a Pagar: escolher um período (de um mês até outro)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5316,7 +5316,8 @@ function excluirCategoria(cat) {
    contasPagarReceber.js — Contas a pagar / Contas a receber
    ============================================================ */
 
-let _cpMesFiltro = null; // "YYYY-MM" ou "" pra todos os meses
+let _cpMesFiltro = null; // início do período "YYYY-MM" ou "" pra todos os meses
+let _cpMesFimFiltro = null; // fim do período "YYYY-MM" (vazio = só o mês de início)
 let _cpStatusFiltro = ""; // "" | "vencido" | "aberto" | "pago"
 
 async function renderContasPagarView(container) {
@@ -5324,6 +5325,7 @@ async function renderContasPagarView(container) {
   const contas = await DB.getAll("contas");
   const cartoes = await DB.getAll("cartoes");
   if (_cpMesFiltro === null) _cpMesFiltro = currentMesRef();
+  if (_cpMesFimFiltro === null) _cpMesFimFiltro = _cpMesFiltro;
 
   container.appendChild(el("span", { class: "module-badge" }, "Contas a Pagar"));
 
@@ -5334,9 +5336,13 @@ async function renderContasPagarView(container) {
   ]));
 
   const filtroWrap = el("div", { class: "filtro-linha", style: "display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;" });
-  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "Mês:"));
-  const inputMes = el("input", { type: "month", value: _cpMesFiltro });
+  // Período: de um mês até outro (ex.: janeiro a março). Para um mês só, deixe os dois iguais.
+  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "De:"));
+  const inputMes = el("input", { type: "month", value: _cpMesFiltro, title: "Mês inicial" });
   filtroWrap.appendChild(inputMes);
+  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "até:"));
+  const inputMesFim = el("input", { type: "month", value: _cpMesFimFiltro, title: "Mês final" });
+  filtroWrap.appendChild(inputMesFim);
   const btnTodos = el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;" }, "Ver todos os meses");
   filtroWrap.appendChild(btnTodos);
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0 0 0 8px;" }, "Status:"));
@@ -5368,8 +5374,12 @@ async function renderContasPagarView(container) {
     const todasFaturas = await calcularFaturas({});
     const hoje = todayISO();
 
-    const bateMes = (mesRef) => !_cpMesFiltro || mesRef === _cpMesFiltro;
-    const bateMesPorData = (dataISO) => !_cpMesFiltro || (dataISO && dataISO.slice(0, 7) === _cpMesFiltro);
+    // Período escolhido (se só um lado estiver preenchido, vale só aquele mês; se estiver invertido, desinverte).
+    let perIni = _cpMesFiltro || _cpMesFimFiltro || "";
+    let perFim = _cpMesFimFiltro || _cpMesFiltro || "";
+    if (perIni && perFim && perIni > perFim) [perIni, perFim] = [perFim, perIni];
+    const bateMes = (mesRef) => !perIni || (!!mesRef && mesRef >= perIni && mesRef <= perFim);
+    const bateMesPorData = (dataISO) => !perIni || (!!dataISO && bateMes(dataISO.slice(0, 7)));
 
     const cpDoMes = todasContasPagar.filter(i => bateMesPorData(i.vencimento));
     const despesasDoMes = todosLancamentos.filter(l => l.tipo === "despesa" && bateMes(mesEfetivoDoLancamento(l)));
@@ -5389,7 +5399,9 @@ async function renderContasPagarView(container) {
 
     kpisWrap.innerHTML = "";
     const grid = el("div", { class: "grid-cards" });
-    grid.appendChild(kpiCard("Receita do mês", fmtMoney(totalReceita), _cpMesFiltro ? mesRefLabel(_cpMesFiltro) : "Todos os meses", "info"));
+    const umMesSo = !perIni || perIni === perFim;
+    grid.appendChild(kpiCard(umMesSo ? "Receita do mês" : "Receita do período", fmtMoney(totalReceita),
+      !perIni ? "Todos os meses" : (umMesSo ? mesRefLabel(perIni) : `${mesRefLabel(perIni)} a ${mesRefLabel(perFim)}`), "info"));
     grid.appendChild(kpiCard("Despesas previstas", fmtMoney(totalDespesaPrevista), "Contas + despesas + faturas", "neg"));
     grid.appendChild(kpiCard("Já pago", fmtMoney(totalJaPago), "", "pos"));
     grid.appendChild(kpiCard("Em aberto", fmtMoney(Math.max(0, totalEmAberto)), "", totalEmAberto > 0 ? "warn" : "pos"));
@@ -5475,8 +5487,14 @@ async function renderContasPagarView(container) {
     ativarSomaArrastar(tbody);
   }
 
-  inputMes.addEventListener("change", () => { _cpMesFiltro = inputMes.value; refresh(); });
-  btnTodos.addEventListener("click", () => { _cpMesFiltro = ""; inputMes.value = ""; refresh(); });
+  inputMes.addEventListener("change", () => {
+    _cpMesFiltro = inputMes.value;
+    // Se o fim ficou vazio ou antes do início, acompanha o início (vira um mês só).
+    if (!_cpMesFimFiltro || (_cpMesFiltro && _cpMesFimFiltro < _cpMesFiltro)) { _cpMesFimFiltro = _cpMesFiltro; inputMesFim.value = _cpMesFiltro; }
+    refresh();
+  });
+  inputMesFim.addEventListener("change", () => { _cpMesFimFiltro = inputMesFim.value; refresh(); });
+  btnTodos.addEventListener("click", () => { _cpMesFiltro = ""; _cpMesFimFiltro = ""; inputMes.value = ""; inputMesFim.value = ""; refresh(); });
   selStatus.addEventListener("change", () => { _cpStatusFiltro = selStatus.value; refresh(); });
 
   await refresh();
