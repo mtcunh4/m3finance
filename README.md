@@ -44,4 +44,5 @@ Sem `BLOB_STORE_ID` (ou `BLOB_READ_WRITE_TOKEN`), os backups vão para `./storag
 
 - **Tela:** edite `public/app.html`. A cada mudança publicada, suba `APP_VERSION` e `APP_VERSION_DESC` ali e a versão em `package.json`.
 - **Banco:** nova pasta em `prisma/migrations/` com data e hora no nome. Nunca edite uma migração já publicada. Coluna nova numa tabela: basta a migração (o `DB.put` grava qualquer coluna que existir). Tabela nova: incluir na lista de `_loja(...)` e em `STORES` na tela. Depois rode `npx prisma db pull`.
+- **Publicações na Vercel:** os ramos `claude/*` não geram publicação de teste (`git.deploymentEnabled` em `vercel.json`), para não gastar o limite diário do plano gratuito. Só o `main` publica.
 - **Nunca** grave chaves, senhas, planilhas ou cópias de segurança no repositório.
