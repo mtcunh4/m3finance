@@ -1834,9 +1834,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.4";
+const APP_VERSION = "5.5";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Despesas em ordem: vencidas, a vencer e pagas por último";
+const APP_VERSION_DESC = "Despesas vencidas aparecem como Vencido, com o valor em vermelho";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4486,12 +4486,14 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
       const descComRecorrencia = l.recorrenciaId ? `🔁 ${l.descricao}${numeracao}` : l.descricao;
       const statusEfetivado = l.tipo === "receita" ? "Recebido" : "Pago";
       const podeMarcar = l.tipo !== "compra_cartao" && !l.isTransferencia;
+      // Igual a Contas a Pagar: despesa vencida mostra "Vencido" (amarelo) e o valor em vermelho.
+      const statusTela = despesaVencida(l) ? "Vencido" : l.status;
       tr.innerHTML = `
         <td>${dataLabel}</td>
         <td title="${l.recorrenciaId ? 'Lançamento recorrente (' + (l.recorrenciaFrequencia || 'Mensal') + ')' : ''}">${descComRecorrencia}${l.pagoDe ? `<div style="font-size:11.5px; color:var(--text-muted);">Pago de: ${escaparTexto(l.pagoDe)}</div>` : ""}</td>
         <td>${cat ? cat.nome : "—"}${l.subcategoria ? `<span style="color:var(--text-muted); font-size:12px;"> · ${l.subcategoria}</span>` : ""}</td>
         <td><span class="badge ${tipoBadge}">${tipoLabel}</span></td>
-        <td class="num money ${l.tipo === "receita" && !l.isTransferencia ? "info" : ""}">${fmtMoney(l.valor)}</td>
+        <td class="num money ${l.tipo === "receita" && !l.isTransferencia ? "info" : (despesaVencida(l) ? "neg" : "")}">${fmtMoney(l.valor)}</td>
         <td></td>
       `;
       if (podeMarcar) {
@@ -4509,10 +4511,10 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
             refresh();
           }
         }));
-        wrapStatus.appendChild(el("span", { class: "badge " + statusBadge(l.status) }, l.status));
+        wrapStatus.appendChild(el("span", { class: "badge " + statusBadge(statusTela) }, statusTela));
         tdStatus.appendChild(wrapStatus);
       } else {
-        tr.children[5].innerHTML = `<span class="badge ${statusBadge(l.status)}" title="${l.dataPagamento ? 'Pago em ' + fmtDate(l.dataPagamento) : ''}">${l.status}</span>`;
+        tr.children[5].innerHTML = `<span class="badge ${statusBadge(statusTela)}" title="${l.dataPagamento ? 'Pago em ' + fmtDate(l.dataPagamento) : ''}">${statusTela}</span>`;
       }
       const tdAction = el("td", { class: "row-actions" });
       if (l.tipo === "compra_cartao") {
