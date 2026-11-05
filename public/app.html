@@ -288,6 +288,11 @@ table.data-table tbody tr.row-overdue td:first-child{box-shadow: inset 3px 0 0 v
 .money.neutro{color:var(--text);}
 /* Receitas sempre em azul (não verde), para não confundir com o vermelho das despesas */
 .money.info{color:var(--blue);}
+/* Campos de filtro (mês e status) com as cores do sistema, nos dois modos */
+.filtro-linha input, .filtro-linha select{
+  background:var(--input-bg); color:var(--text); border:1px solid var(--border);
+  border-radius:8px; padding:7px 10px; font-size:13px;
+}
 .money.pos{color:var(--green); font-weight:600;}
 .money.neg{color:var(--red); font-weight:600;}
 
@@ -1834,9 +1839,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.6";
+const APP_VERSION = "5.7";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Despesas a vencer aparecem como Em aberto, igual a Contas a Pagar";
+const APP_VERSION_DESC = "Contas a Pagar: filtro de vencidos (em atraso)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5236,7 +5241,7 @@ function excluirCategoria(cat) {
    ============================================================ */
 
 let _cpMesFiltro = null; // "YYYY-MM" ou "" pra todos os meses
-let _cpStatusFiltro = ""; // "" | "pago" | "aberto"
+let _cpStatusFiltro = ""; // "" | "vencido" | "aberto" | "pago"
 
 async function renderContasPagarView(container) {
   const categorias = await DB.getAll("categorias");
@@ -5252,7 +5257,7 @@ async function renderContasPagarView(container) {
     el("button", { class: "btn-accent", onclick: () => abrirNovoLancamento("conta_pagar") }, "+ Nova Conta a Pagar")
   ]));
 
-  const filtroWrap = el("div", { style: "display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;" });
+  const filtroWrap = el("div", { class: "filtro-linha", style: "display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;" });
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "Mês:"));
   const inputMes = el("input", { type: "month", value: _cpMesFiltro });
   filtroWrap.appendChild(inputMes);
@@ -5261,8 +5266,9 @@ async function renderContasPagarView(container) {
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0 0 0 8px;" }, "Status:"));
   const selStatus = el("select", {}, [
     el("option", { value: "" }, "Todos"),
-    el("option", { value: "pago" }, "Só pagos"),
-    el("option", { value: "aberto" }, "Só em aberto")
+    el("option", { value: "vencido" }, "Só vencidos (em atraso)"),
+    el("option", { value: "aberto" }, "Só em aberto (a vencer)"),
+    el("option", { value: "pago" }, "Só pagos")
   ]);
   selStatus.value = _cpStatusFiltro;
   filtroWrap.appendChild(selStatus);
@@ -5354,7 +5360,8 @@ async function renderContasPagarView(container) {
     itensConsolidados.sort((a, b) => (grupoOrdem(a) - grupoOrdem(b)) || (a.vencimento || "").localeCompare(b.vencimento || ""));
     let itensExibidos = itensConsolidados;
     if (_cpStatusFiltro === "pago") itensExibidos = itensExibidos.filter(i => i.pago);
-    else if (_cpStatusFiltro === "aberto") itensExibidos = itensExibidos.filter(i => !i.pago);
+    else if (_cpStatusFiltro === "vencido") itensExibidos = itensExibidos.filter(i => grupoOrdem(i) === 0);
+    else if (_cpStatusFiltro === "aberto") itensExibidos = itensExibidos.filter(i => grupoOrdem(i) === 1);
 
     tbody.innerHTML = "";
     if (!itensExibidos.length) {
