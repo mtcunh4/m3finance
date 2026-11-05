@@ -9,19 +9,28 @@
   --navy: #0f2a4a;
   --navy-2: #163b66;
   --navy-light: #e8eef6;
-  --bg: #f4f6fa;
+  --bg: #f1f4f8;
   --card-bg: #ffffff;
-  --border: #e2e8f0;
-  --text: #1c2733;
-  --text-muted: #64748b;
-  --green: #16a34a;
-  --green-bg: #eafaf0;
-  --red: #dc2626;
+  --border: #d5dde8;
+  --text: #0d1a2b;
+  --text-muted: #56677d;
+  --green: #1f7a45;
+  --green-bg: #e3f4ea;
+  --red: #c0262d;
   --red-bg: #fdecec;
-  --amber: #d97706;
-  --amber-bg: #fef3e0;
-  --blue: #2563eb;
-  --accent: #1d4ed8;
+  --amber: #a16207;
+  --amber-bg: #fdf1d6;
+  --amber-ink: #8a5a00;
+  --blue: #1f6a8c;
+  --blue-bg: #e3f0f6;
+  --blue-ink: #155a7a;
+  /* Cor de destaque (botões principais): azul petróleo, o mesmo tom do LIGA.
+     A cor escolhida em Configurações entra por --accent-user (só no modo claro). */
+  --accent: var(--accent-user, #1f6a8c);
+  --th-bg: #e6eff4;
+  --th-ink: #0c4763;
+  --row-overdue-bg: #fff6f5;
+  --row-overdue-bar: #c0262d;
   --radius: 14px;
   --radius-sm: 9px;
   --shadow: 0 1px 2px rgba(15,42,74,.04), 0 4px 16px rgba(15,42,74,.06);
@@ -35,20 +44,31 @@
 :root[data-theme="dark"]{
   --navy: #0b1e33;
   --navy-2: #0f2740;
-  --navy-light: #16324d;
-  --bg: #0f1620;
-  --card-bg: #1a2332;
-  --border: #2b3648;
-  --text: #e4e9f0;
-  --text-muted: #94a3b8;
-  --green: #22c55e;
-  --green-bg: #113322;
-  --red: #ef4444;
-  --red-bg: #3a1414;
-  --amber: #f59e0b;
-  --amber-bg: #3a2a0d;
-  --blue: #3b82f6;
-  --accent: #3b6fe0;
+  --navy-light: #12283a;
+  --bg: #08111d;
+  --card-bg: #0f1b2b;
+  --border: #1f2f45;
+  --text: #e5ecf5;
+  --text-muted: #91a1b6;
+  --green: #6fd0a0;
+  --green-bg: rgba(111,208,160,.14);
+  --red: #ff9d94;
+  --red-bg: rgba(255,138,128,.14);
+  --amber: #f5c661;
+  --amber-bg: rgba(242,182,50,.14);
+  --amber-ink: #f5c661;
+  --blue: #7cc4e6;
+  --blue-bg: rgba(43,122,160,.28);
+  --blue-ink: #9fd4ec;
+  /* No escuro o destaque é sempre o azul petróleo do LIGA, para nenhuma
+     cor escolhida em Configurações ficar ilegível no fundo escuro. */
+  --accent: #2b7aa0;
+  --th-bg: #12283a;
+  --th-ink: #a9d3e6;
+  --row-overdue-bg: rgba(255,138,128,.06);
+  --row-overdue-bar: #ff8a80;
+  /* Campos de data e listas do navegador também no tom escuro */
+  color-scheme: dark;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.35);
   --shadow-lg: 0 12px 32px rgba(0,0,0,.5);
   --input-bg: #141c29;
@@ -162,11 +182,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 
 /* ===== BUTTONS ===== */
 .btn-primary{
-  background: var(--navy); color:#fff; border:none; padding:10px 18px;
+  background: var(--accent); color:#fff; border:none; padding:10px 18px;
   border-radius: var(--radius-sm); font-weight:600; font-size:13.5px; cursor:pointer;
   box-shadow: 0 2px 8px rgba(15,42,74,.25);
 }
-.btn-primary:hover{background: var(--navy-2);}
+.btn-primary:hover{filter: brightness(0.9);}
 .btn-secondary{
   background:var(--card-bg); color:var(--heading); border:1px solid var(--border); padding:9px 16px;
   border-radius: var(--radius-sm); font-weight:600; font-size:13px; cursor:pointer;
@@ -196,7 +216,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .btn-accent{
   background:var(--accent); color:#fff; border:none; padding:9px 16px;
   border-radius: var(--radius-sm); font-weight:700; font-size:13px; cursor:pointer;
-  box-shadow: 0 2px 8px rgba(29,78,216,.25);
+  box-shadow: 0 2px 8px rgba(31,106,140,.25);
 }
 .btn-accent:hover{filter: brightness(0.88);}
 
@@ -227,6 +247,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .kpi-card .kpi-value{font-size:24px; font-weight:800; margin-top:6px; color:var(--heading);}
 .kpi-card .kpi-value.pos{color:var(--green);}
 .kpi-card .kpi-value.neg{color:var(--red);}
+.kpi-card .kpi-value.info{color:var(--blue);}
+.kpi-card .kpi-value.warn{color:var(--amber);}
 .kpi-card .kpi-sub{font-size:11.5px; color:var(--text-muted); margin-top:4px;}
 
 .panel{
@@ -251,24 +273,26 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .table-wrap{overflow-x:auto; border-radius:var(--radius-sm);}
 table.data-table{width:100%; border-collapse:collapse; font-size:13.4px; min-width:640px;}
 table.data-table thead th{
-  text-align:left; padding:10px 12px; background:var(--navy-light); color:var(--heading);
+  text-align:left; padding:10px 12px; background:var(--th-bg); color:var(--th-ink);
   font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
   position:sticky; top:0;
 }
 table.data-table thead th.num, table.data-table td.num{text-align:right;}
 table.data-table tbody td{padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:middle;}
 table.data-table tbody tr:hover{background:#fafcff;}
-table.data-table tbody tr.row-overdue{background: var(--red-bg);}
+table.data-table tbody tr.row-overdue{background: var(--row-overdue-bg);}
+table.data-table tbody tr.row-overdue td:first-child{box-shadow: inset 3px 0 0 var(--row-overdue-bar);}
 .empty-row td{text-align:center; padding:30px; color:var(--text-muted);}
 
-.money{font-variant-numeric: tabular-nums; color:#1d4ed8; font-weight:600;}
+.money{font-variant-numeric: tabular-nums; color:var(--blue); font-weight:600;}
+.money.neutro{color:var(--text);}
 .money.pos{color:var(--green); font-weight:600;}
 .money.neg{color:var(--red); font-weight:600;}
 
 .badge{display:inline-flex; align-items:center; padding:3px 9px; border-radius:99px; font-size:11px; font-weight:700;}
 .badge.green{background:var(--green-bg); color:var(--green);}
 .badge.red{background:var(--red-bg); color:var(--red);}
-.badge.amber{background:var(--amber-bg); color:var(--amber);}
+.badge.amber{background:var(--amber-bg); color:var(--amber-ink);}
 .badge.gray{background:#eef1f5; color:var(--text-muted);}
 .ajuste-icon{
   display:inline-flex; align-items:center; justify-content:center;
@@ -314,7 +338,7 @@ table.data-table tbody tr.row-overdue{background: var(--red-bg);}
 }
 .resultado-linha .rot{color:var(--text-muted);}
 .resultado-linha.destaque .rot{color:var(--amber); opacity:.85;}
-.badge.blue{background:#e7f0ff; color:var(--blue);}
+.badge.blue{background:var(--blue-bg); color:var(--blue-ink);}
 
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
 
@@ -469,7 +493,7 @@ tbody tr[data-valor]{cursor:cell; user-select:none;}
 /* ===== Genérico: badge de módulo + swatch de cor ===== */
 .module-badge{
   display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
-  color:var(--accent); background:var(--navy-light); padding:3px 10px; border-radius:99px; margin-bottom:8px;
+  color:var(--blue-ink); background:var(--blue-bg); padding:3px 10px; border-radius:99px; margin-bottom:8px;
 }
 .color-swatch-input{width:52px; height:38px; padding:2px; border:1px solid var(--border); border-radius:8px; cursor:pointer;}
 .logo-preview{width:56px; height:56px; border-radius:12px; object-fit:cover; border:1px solid var(--border); background:var(--card-bg);}
@@ -1336,7 +1360,7 @@ let APP_CONFIG = {
   subtitulo: "",
   logo: LOGO_PADRAO, // dataURL da imagem (logo M3 Compliance), ou null (usa a inicial do nome)
   moeda: "BRL",       // BRL | USD | EUR
-  corDestaque: "#1d4ed8",
+  corDestaque: "#1f6a8c",
   tema: "claro"       // claro | escuro | auto (segue o sistema)
 };
 
@@ -1400,7 +1424,9 @@ function aplicarConfigVisual() {
     }
   });
 
-  document.documentElement.style.setProperty("--accent", APP_CONFIG.corDestaque || "#1d4ed8");
+  // O azul antigo (#1d4ed8) era o padrão de antes: quem nunca trocou passa a ver o azul petróleo.
+  const corDest = (APP_CONFIG.corDestaque || "").toLowerCase();
+  document.documentElement.style.setProperty("--accent-user", corDest && corDest !== "#1d4ed8" ? corDest : "#1f6a8c");
   aplicarTema(APP_CONFIG.tema || "claro");
   atualizarBotaoTemaTop(APP_CONFIG.tema || "claro");
 }
@@ -1498,8 +1524,8 @@ function calcularMesReferenciaFatura(dataCompraISO, diaFechamento) {
 function statusBadge(status) {
   const map = {
     "Aberta": "blue", "Fechada": "amber", "Paga": "green",
-    "Parcialmente paga": "amber", "Vencida": "red", "Crédito": "red",
-    "Em aberto": "blue", "Pago": "green", "Vencido": "red", "Parcialmente pago": "amber",
+    "Parcialmente paga": "amber", "Vencida": "amber", "Crédito": "red",
+    "Em aberto": "blue", "Pago": "green", "Vencido": "amber", "Parcialmente pago": "amber",
     "Pendente": "blue", "Recebido": "green", "Recebido parcialmente": "amber",
     "Previsto": "gray", "Efetivado": "green", "Recebida": "green"
   };
@@ -1784,8 +1810,8 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.0";
-const APP_VERSION_DESC = "Novo servidor: Vercel + Neon (mesmo formato do LIGA e dos autos)";
+const APP_VERSION = "5.1";
+const APP_VERSION_DESC = "Cores novas nos modos claro e escuro (azul petróleo do LIGA; vencido em amarelo, em aberto em azul)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5241,10 +5267,10 @@ async function renderContasPagarView(container) {
 
     kpisWrap.innerHTML = "";
     const grid = el("div", { class: "grid-cards" });
-    grid.appendChild(kpiCard("Receita do mês", fmtMoney(totalReceita), _cpMesFiltro ? mesRefLabel(_cpMesFiltro) : "Todos os meses", "pos"));
+    grid.appendChild(kpiCard("Receita do mês", fmtMoney(totalReceita), _cpMesFiltro ? mesRefLabel(_cpMesFiltro) : "Todos os meses", "info"));
     grid.appendChild(kpiCard("Despesas previstas", fmtMoney(totalDespesaPrevista), "Contas + despesas + faturas", "neg"));
     grid.appendChild(kpiCard("Já pago", fmtMoney(totalJaPago), "", "pos"));
-    grid.appendChild(kpiCard("Em aberto", fmtMoney(Math.max(0, totalEmAberto)), "", totalEmAberto > 0 ? "neg" : "pos"));
+    grid.appendChild(kpiCard("Em aberto", fmtMoney(Math.max(0, totalEmAberto)), "", totalEmAberto > 0 ? "warn" : "pos"));
     kpisWrap.appendChild(grid);
 
     // --- Lista consolidada ---
@@ -5306,7 +5332,7 @@ async function renderContasPagarView(container) {
         <td>${item.descricao}</td>
         <td>${item.categoriaCartao}</td>
         <td>${item.vencimento ? fmtDate(item.vencimento) : "—"}</td>
-        <td class="num money neg">${fmtMoney(item.valor)}</td>
+        <td class="num money ${vencida ? "neg" : "neutro"}">${fmtMoney(item.valor)}</td>
         <td><span class="badge ${statusBadge(status)}">${status}</span></td>
         <td style="font-size:12px; color:var(--text-muted);">${item.pagoInfo}</td>
       `;
@@ -7366,7 +7392,7 @@ async function renderConfiguracoesView(container) {
   ]));
   grid.appendChild(el("div", { class: "field" }, [
     el("label", {}, "Cor de destaque (aparência)"),
-    el("input", { id: "cfg_cor", type: "color", class: "color-swatch-input", value: APP_CONFIG.corDestaque })
+    el("input", { id: "cfg_cor", type: "color", class: "color-swatch-input", value: (APP_CONFIG.corDestaque || "").toLowerCase() === "#1d4ed8" ? "#1f6a8c" : (APP_CONFIG.corDestaque || "#1f6a8c") })
   ]));
   grid.appendChild(el("div", { class: "field" }, [
     el("label", {}, "Tema"),
