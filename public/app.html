@@ -1834,9 +1834,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.5";
+const APP_VERSION = "5.6";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Despesas vencidas aparecem como Vencido, com o valor em vermelho";
+const APP_VERSION_DESC = "Despesas a vencer aparecem como Em aberto, igual a Contas a Pagar";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4055,7 +4055,7 @@ async function renderFormPorTipo(tipo, container) {
           <select id="fl_forma">${FORMAS_PAGAMENTO.map(f => `<option>${f}</option>`).join("")}</select>
         </div>
         <div class="field"><label>Conta de pagamento</label><select id="fl_conta">${optionsHtml(contas, "id", "nomeConta", "")}</select></div>
-        <div class="field"><label>Status</label><select id="fl_status"><option>Pago</option><option>Previsto</option></select></div>
+        <div class="field"><label>Status</label><select id="fl_status"><option>Pago</option><option value="Previsto">Em aberto</option></select></div>
         <div class="field" id="fl_dataPagamentoWrap"><label>Data do pagamento</label><input id="fl_dataPagamento" type="date" value="${todayISO()}"></div>
         <div class="field full">
           <label>Mês de lançamento (opcional)</label>
@@ -4407,7 +4407,7 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
   }
   selCat.addEventListener("change", atualizarOpcoesSubcategoria);
   const selStatus = el("select");
-  selStatus.innerHTML = `<option value="">Todos os status</option><option>Pago</option><option>Previsto</option><option>Recebido</option><option>Pendente</option>`;
+  selStatus.innerHTML = `<option value="">Todos os status</option><option>Pago</option><option value="Previsto">Em aberto</option><option>Recebido</option><option>Pendente</option>`;
   selStatus.value = filtroSalvo.status;
   filterBar.appendChild(searchInput); filterBar.appendChild(selCat); filterBar.appendChild(selSubcat); filterBar.appendChild(selStatus);
   container.appendChild(filterBar);
@@ -4486,8 +4486,9 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
       const descComRecorrencia = l.recorrenciaId ? `🔁 ${l.descricao}${numeracao}` : l.descricao;
       const statusEfetivado = l.tipo === "receita" ? "Recebido" : "Pago";
       const podeMarcar = l.tipo !== "compra_cartao" && !l.isTransferencia;
-      // Igual a Contas a Pagar: despesa vencida mostra "Vencido" (amarelo) e o valor em vermelho.
-      const statusTela = despesaVencida(l) ? "Vencido" : l.status;
+      // Igual a Contas a Pagar: despesa vencida mostra "Vencido" (amarelo) e o valor em vermelho;
+      // despesa ainda no prazo ("Previsto" no banco) aparece como "Em aberto" (azul petróleo).
+      const statusTela = despesaVencida(l) ? "Vencido" : (l.tipo === "despesa" && l.status === "Previsto" ? "Em aberto" : l.status);
       tr.innerHTML = `
         <td>${dataLabel}</td>
         <td title="${l.recorrenciaId ? 'Lançamento recorrente (' + (l.recorrenciaFrequencia || 'Mensal') + ')' : ''}">${descComRecorrencia}${l.pagoDe ? `<div style="font-size:11.5px; color:var(--text-muted);">Pago de: ${escaparTexto(l.pagoDe)}</div>` : ""}</td>
@@ -4507,7 +4508,7 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
             if (l.tipo === "receita" && novoStatus === "Recebido" && !atualizado.dataRecebimento) atualizado.dataRecebimento = atualizado.data;
             await DB.put("lancamentos", atualizado);
             await logAction("editar", l.tipo, `Status de "${l.descricao}" alterado para ${novoStatus}`);
-            showToast(`Marcado como ${novoStatus}`, "success");
+            showToast(`Marcado como ${novoStatus === "Previsto" ? "Em aberto" : novoStatus}`, "success");
             refresh();
           }
         }));
@@ -4717,7 +4718,7 @@ function abrirEditarLancamento(item) {
                <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Recebido"?"selected":""}>Recebido</option><option ${item.status==="Pendente"?"selected":""}>Pendente</option></select></div>`
             : `<div class="field"><label>Forma de pagamento</label><select id="ed_forma">${FORMAS_PAGAMENTO.map(f=>`<option ${item.formaPagamento===f?"selected":""}>${f}</option>`).join("")}</select></div>
                <div class="field"><label>Conta de pagamento</label><select id="ed_conta">${optionsHtml(contas, "id", "nomeConta", item.contaId)}</select></div>
-               <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Pago"?"selected":""}>Pago</option><option ${item.status==="Previsto"?"selected":""}>Previsto</option></select></div>`
+               <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Pago"?"selected":""}>Pago</option><option value="Previsto" ${item.status==="Previsto"?"selected":""}>Em aberto</option></select></div>`
           }
           <div class="field full">
             <label>Mês de lançamento (opcional)</label>
