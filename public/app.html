@@ -1834,9 +1834,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.3";
+const APP_VERSION = "5.4";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar em ordem: vencidas, a vencer e pagas por último";
+const APP_VERSION_DESC = "Despesas em ordem: vencidas, a vencer e pagas por último";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4460,7 +4460,11 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
     // Despesas vencidas (não pagas e com data já passada) aparecem sempre em cima.
     const hojeLista = todayISO();
     const despesaVencida = (l) => l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !!l.data && l.data < hojeLista;
-    todos.sort((a,b) => (despesaVencida(b) - despesaVencida(a))
+    // Na tela de Despesas a ordem é: vencidas, a vencer e pagas por último.
+    // Nas outras listas (Lançamentos, Receitas) só as despesas vencidas sobem para o topo.
+    const soDespesas = tipos.length === 1 && tipos[0] === "despesa";
+    const grupoOrdem = (l) => despesaVencida(l) ? 0 : (soDespesas && l.status === "Pago" ? 2 : 1);
+    todos.sort((a,b) => (grupoOrdem(a) - grupoOrdem(b))
       || (a.data || `${a.mesReferencia}-01`).localeCompare(b.data || `${b.mesReferencia}-01`));
 
     if (!todos.length) {
