@@ -738,7 +738,6 @@ tbody tr[data-valor]{cursor:cell; user-select:none;}
       <h1 id="viewTitle"><span class="view-ic" id="viewIcon">◧</span> Dashboard</h1>
       <div class="topbar-actions">
         <button class="btn-topbar btn-topbar-icone" id="btnAtualizarTop" title="Atualizar dados desta tela">⟳</button>
-        <button class="btn-topbar btn-topbar-icone" id="btnTemaTop" title="Alternar tema">🌙</button>
         <button class="btn-topbar" id="btnDesfazerTop" style="display:none;">↩ Desfazer última ação</button>
       </div>
     </header>
@@ -1897,9 +1896,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.10";
+const APP_VERSION = "5.11";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Filtro de período (de um mês até outro) em Dashboard, Faturas e Contas a Pagar";
+const APP_VERSION_DESC = "Modo escuro só no menu da conta (saiu o botão do topo)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -9290,7 +9289,8 @@ const App = {
       await this.refresh();
       showToast("Tela atualizada", "success");
     });
-    document.getElementById("btnTemaTop").addEventListener("click", async () => {
+    // O botão de tema do topo foi retirado: o modo escuro fica só no menu da conta (pé da barra lateral).
+    document.getElementById("btnTemaTop")?.addEventListener("click", async () => {
       const ordem = ["claro", "escuro", "auto"];
       const atual = APP_CONFIG.tema || "claro";
       const proximo = ordem[(ordem.indexOf(atual) + 1) % ordem.length];
