@@ -1839,9 +1839,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.7";
+const APP_VERSION = "5.8";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: filtro de vencidos (em atraso)";
+const APP_VERSION_DESC = "Despesas: filtro de vencidos (em atraso)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4412,7 +4412,10 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
   }
   selCat.addEventListener("change", atualizarOpcoesSubcategoria);
   const selStatus = el("select");
-  selStatus.innerHTML = `<option value="">Todos os status</option><option>Pago</option><option value="Previsto">Em aberto</option><option>Recebido</option><option>Pendente</option>`;
+  // Na tela de Despesas o filtro é igual ao de Contas a Pagar: vencidas, a vencer e pagas.
+  selStatus.innerHTML = (tipos.length === 1 && tipos[0] === "despesa")
+    ? `<option value="">Todos os status</option><option value="__vencido">Só vencidos (em atraso)</option><option value="Previsto">Só em aberto (a vencer)</option><option value="Pago">Só pagos</option>`
+    : `<option value="">Todos os status</option><option>Pago</option><option value="Previsto">Em aberto</option><option>Recebido</option><option>Pendente</option>`;
   selStatus.value = filtroSalvo.status;
   filterBar.appendChild(searchInput); filterBar.appendChild(selCat); filterBar.appendChild(selSubcat); filterBar.appendChild(selStatus);
   container.appendChild(filterBar);
@@ -4461,10 +4464,12 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
     if (termo) todos = todos.filter(l => l.descricao.toLowerCase().includes(termo));
     if (catFiltro) todos = todos.filter(l => l.categoriaId === catFiltro);
     if (subcatFiltro) todos = todos.filter(l => l.subcategoria === subcatFiltro);
-    if (statusFiltro) todos = todos.filter(l => l.status === statusFiltro);
-    // Despesas vencidas (não pagas e com data já passada) aparecem sempre em cima.
     const hojeLista = todayISO();
     const despesaVencida = (l) => l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !!l.data && l.data < hojeLista;
+    if (statusFiltro === "__vencido") todos = todos.filter(despesaVencida);
+    else if (statusFiltro === "Previsto") todos = todos.filter(l => l.status === "Previsto" && !despesaVencida(l));
+    else if (statusFiltro) todos = todos.filter(l => l.status === statusFiltro);
+    // Despesas vencidas (não pagas e com data já passada) aparecem sempre em cima.
     // Na tela de Despesas a ordem é: vencidas, a vencer e pagas por último.
     // Nas outras listas (Lançamentos, Receitas) só as despesas vencidas sobem para o topo.
     const soDespesas = tipos.length === 1 && tipos[0] === "despesa";
