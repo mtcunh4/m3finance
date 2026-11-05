@@ -193,11 +193,36 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .usuario-chave::after{content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .15s; box-shadow:0 1px 2px rgba(0,0,0,.3);}
 .usuario-tema input:checked + .usuario-chave{background:var(--accent);}
 .usuario-tema input:checked + .usuario-chave::after{transform:translateX(16px);}
-/* Barra lateral fechada (computador): some a barra e a tela usa a largura toda */
-.sidebar, .main{transition: transform .25s ease, margin-left .25s ease;}
-body.lateral-fechada .sidebar{transform:translateX(-100%);}
-body.lateral-fechada .main{margin-left:0;}
-body.lateral-fechada .hamburger{display:flex;}
+/* Barra lateral fechada (computador): fica só a faixa de ícones. Ao passar o mouse,
+   ela abre por cima da tela e mostra "Fixar barra lateral" para deixá-la aberta de novo. */
+.sidebar{transition: transform .25s ease, width .2s ease, box-shadow .2s ease;}
+.main{transition: margin-left .2s ease;}
+.btn-fechar-lateral .txt-fixar{display:none;}
+@media(min-width:901px){
+  body.lateral-fechada .main{margin-left:76px;}
+  body.lateral-fechada .sidebar{width:76px; overflow:visible;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .brand{justify-content:center; padding:18px 10px;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .brand-text,
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) #appVersionBadge,
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .nav-txt,
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .nav-drag-handle,
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .usuario-nome,
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .usuario-seta,
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .btn-fechar-lateral .txt{display:none;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .brand-mark{width:44px; height:44px;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .nav-menu{padding:10px 12px;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .nav-item{justify-content:center; padding:11px 0;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .nav-item .nav-ic{width:auto;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .sidebar-footer{padding:14px 12px 20px;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .usuario-cartao{justify-content:center; padding:6px; background:transparent; border-color:transparent;}
+  body.lateral-fechada .sidebar:not(:hover):not(:focus-within) .btn-fechar-lateral{justify-content:center;}
+  /* Aberta por cima ao passar o mouse */
+  body.lateral-fechada .sidebar:hover, body.lateral-fechada .sidebar:focus-within{width:252px; box-shadow:8px 0 30px rgba(0,0,0,.3);}
+  body.lateral-fechada .btn-fechar-lateral .txt-fechar{display:none;}
+  body.lateral-fechada .btn-fechar-lateral .txt-fixar{display:inline;}
+  body.lateral-fechada .sidebar:hover .btn-fechar-lateral,
+  body.lateral-fechada .sidebar:focus-within .btn-fechar-lateral{outline:1.5px solid rgba(235,190,125,.75); outline-offset:-1px;}
+}
 .btn-ghost{
   width:100%; background: rgba(255,255,255,.08); color:#dce6f2;
   border:1px solid rgba(255,255,255,.16); padding:9px; border-radius:var(--radius-sm);
@@ -724,7 +749,7 @@ tbody tr[data-valor]{cursor:cell; user-select:none;}
       </div>
       <button class="btn-fechar-lateral" id="btnFecharLateral" title="Fechar barra lateral">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
-        Fechar barra lateral
+        <span class="txt txt-fechar">Fechar barra lateral</span><span class="txt txt-fixar">Fixar barra lateral</span>
       </button>
     </div>
   </aside>
@@ -1898,7 +1923,7 @@ function lerValorMascarado(input) {
    O texto aparece sozinho no rodapé do menu lateral. */
 const APP_VERSION = "5.11";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Modo escuro só no menu da conta (saiu o botão do topo)";
+const APP_VERSION_DESC = "Modo escuro só no menu da conta; barra lateral recolhe para ícones e abre ao passar o mouse, com opção de fixar";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -9260,19 +9285,35 @@ const App = {
       try { localStorage.setItem("cf_lateral_fechada", fechada ? "1" : "0"); } catch (e) {}
     };
     try { if (localStorage.getItem("cf_lateral_fechada") === "1") document.body.classList.add("lateral-fechada"); } catch (e) {}
-    document.getElementById("btnFecharLateral").addEventListener("click", () => {
+    // Os nomes dos módulos ganham uma "caixinha" própria, para a faixa recolhida mostrar só o ícone.
+    document.querySelectorAll("#navMenu .nav-item").forEach(item => {
+      [...item.childNodes].forEach(n => {
+        if (n.nodeType === 3 && n.textContent.trim()) {
+          const sp = document.createElement("span");
+          sp.className = "nav-txt";
+          sp.textContent = n.textContent.trim();
+          item.replaceChild(sp, n);
+          item.title = sp.textContent;
+        }
+      });
+    });
+    const btnLateral = document.getElementById("btnFecharLateral");
+    const atualizarTituloLateral = () => {
+      btnLateral.title = document.body.classList.contains("lateral-fechada") ? "Fixar barra lateral" : "Fechar barra lateral";
+    };
+    atualizarTituloLateral();
+    btnLateral.addEventListener("click", () => {
       if (ehCelular()) {
         document.getElementById("sidebar").classList.remove("open");
         document.getElementById("overlay").classList.remove("show");
-      } else {
-        definirLateralFechada(true);
-      }
-    });
-    document.getElementById("hamburger").addEventListener("click", () => {
-      if (!ehCelular() && document.body.classList.contains("lateral-fechada")) {
-        definirLateralFechada(false);
         return;
       }
+      // Fechada → fixa aberta; aberta → recolhe para a faixa de ícones.
+      definirLateralFechada(!document.body.classList.contains("lateral-fechada"));
+      btnLateral.blur(); // tira o foco, senão a barra continuaria aberta por cima
+      atualizarTituloLateral();
+    });
+    document.getElementById("hamburger").addEventListener("click", () => {
       document.getElementById("sidebar").classList.toggle("open");
       document.getElementById("overlay").classList.toggle("show");
     });
