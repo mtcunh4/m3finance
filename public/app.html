@@ -1897,9 +1897,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.9";
+const APP_VERSION = "5.10";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Menu da conta no pé da barra lateral (configurações, senha, modo escuro, ajuda, sair) e opção de fechar a barra lateral";
+const APP_VERSION_DESC = "Filtro de período (de um mês até outro) em Dashboard, Faturas e Contas a Pagar";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -2247,14 +2247,9 @@ async function renderDashboardView(container) {
   container.appendChild(el("span", { class: "module-badge" }, "Módulo 1"));
 
   // ---- Filtros ----
-  const filterBar = el("div", { class: "filter-bar" });
-  const selMes = el("select", { id: "dashMes" });
-  selMes.appendChild(el("option", { value: "" }, "Ano inteiro"));
-  MESES_PT.forEach((m, idx) => selMes.appendChild(el("option", { value: idx + 1 }, m)));
-  selMes.value = now.getMonth() + 1;
-  const selAno = el("select", { id: "dashAno" });
-  for (let y = now.getFullYear() - 3; y <= now.getFullYear() + 1; y++) selAno.appendChild(el("option", { value: y }, String(y)));
-  selAno.value = now.getFullYear();
+  const filterBar = el("div", { class: "filter-bar filtro-linha" });
+  // Período: começa no mês atual; "Ano inteiro" pega de janeiro a dezembro do ano escolhido.
+  let dashIni = currentMesRef(), dashFim = currentMesRef();
   const selCartao = el("select", { id: "dashCartao" });
   // "__nenhum__" = ignora cartões por completo (só despesas avulsas), útil pra ver uma categoria isolada
   selCartao.innerHTML = `<option value="">Todos os cartões</option><option value="__nenhum__">Sem cartão (só avulsas)</option>` + optionsHtml(cartoes, "id", "nome", "");
@@ -2266,8 +2261,11 @@ async function renderDashboardView(container) {
     "Incluir despesas avulsas"
   ]);
 
-  filterBar.appendChild(selMes);
-  filterBar.appendChild(selAno);
+  const camposPeriodo = criarCamposPeriodo(filterBar, { ini: dashIni, fim: dashFim, aoMudar: (a, b) => { dashIni = a; dashFim = b; refresh(); } });
+  filterBar.appendChild(el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;", onclick: () => {
+    const ano = (normalizarPeriodo(dashIni, dashFim).ini || currentMesRef()).slice(0, 4);
+    camposPeriodo.definir(`${ano}-01`, `${ano}-12`);
+  } }, "Ano inteiro"));
   filterBar.appendChild(selCartao);
   filterBar.appendChild(selCategoria);
   filterBar.appendChild(chkIncluirAvulsas);
@@ -2299,15 +2297,14 @@ async function renderDashboardView(container) {
 
   async function refresh() {
     destroyCharts();
-    const mesSel = selMes.value;
-    const anoSel = selAno.value;
+    const per = normalizarPeriodo(dashIni, dashFim);
+    if (!per.ini) { per.ini = currentMesRef(); per.fim = per.ini; }
+    const anoSel = per.fim.slice(0, 4); // os gráficos mostram o ano do fim do período
     const semCartao = selCartao.value === "__nenhum__";
     const cartaoFiltro = (selCartao.value && !semCartao) ? selCartao.value : null;
     const categoriaFiltro = selCategoria.value || null;
 
-    const mesesConsiderados = mesSel
-      ? [`${anoSel}-${String(mesSel).padStart(2, "0")}`]
-      : Array.from({ length: 12 }, (_, i) => `${anoSel}-${String(i + 1).padStart(2, "0")}`);
+    const mesesConsiderados = relListaMeses(per.ini, per.fim);
 
     const lancamentos = await DB.getAll("lancamentos");
     const parcelas = semCartao ? [] : await DB.getAll("parcelas");
@@ -2361,7 +2358,7 @@ async function renderDashboardView(container) {
 
     const saldoPrevisto = receitaPrevista - despesaPrevista - totalFaturas;
 
-    const mesRefAtual = mesSel ? `${anoSel}-${String(mesSel).padStart(2,"0")}` : currentMesRef();
+    const mesRefAtual = per.fim; // parcelas futuras = depois do fim do período
     const parcelasFuturas = parcelas.filter(p => compareMesRef(p.mesReferencia, mesRefAtual) > 0 && (!cartaoFiltro || p.cartaoId === cartaoFiltro)).reduce((s,p)=>s+p.valor,0);
 
     kpiWrap.innerHTML = "";
@@ -2382,7 +2379,7 @@ async function renderDashboardView(container) {
     await renderCharts({ cartaoFiltro, anoSel, semCartao });
   }
 
-  [selMes, selAno, selCartao, selCategoria].forEach(s => s.addEventListener("change", refresh));
+  [selCartao, selCategoria].forEach(s => s.addEventListener("change", refresh));
   inputIncluirAvulsas.addEventListener("change", refresh);
   await refresh();
 }
@@ -3314,8 +3311,8 @@ async function calcularFaturas({ cartaoIdFiltro = null } = {}) {
 let _faturasSelecionadas = new Set(); // chave: "cartaoId|mesReferencia"
 let _faturasCacheAtual = []; // lista de faturas exibida na última renderização, pra somar as selecionadas
 let _faturaFiltroCartaoAtivo = ""; // persiste entre re-renders (ex: depois de editar algo)
-let _faturaFiltroAnoAtivo = "";
-let _faturaFiltroMesAtivo = ""; // "01".."12" ou "" (todos)
+let _faturaFiltroIni = ""; // período "YYYY-MM" (vazio = todos os meses)
+let _faturaFiltroFim = "";
 let _faturaFiltroStatusAtivo = "";
 
 async function renderFaturasView(container) {
@@ -3337,19 +3334,9 @@ async function renderFaturasView(container) {
   selCartao.innerHTML = `<option value="">Todos os cartões</option>` + optionsHtml(cartoes, "id", "nome", _faturaFiltroCartaoAtivo);
   filterBar.appendChild(selCartao);
 
-  const todasParcelasParaAnos = await DB.getAll("parcelas");
-  const anosDisponiveis = [...new Set(todasParcelasParaAnos.map(p => p.mesReferencia?.slice(0, 4)).filter(Boolean))].sort((a, b) => b.localeCompare(a));
-  const anoAtualStr = String(new Date().getFullYear());
-  if (!anosDisponiveis.includes(anoAtualStr)) anosDisponiveis.unshift(anoAtualStr);
-  const selAno = el("select", { id: "filtroFaturaAno" });
-  selAno.innerHTML = `<option value="">Todos os anos</option>` + anosDisponiveis.map(a => `<option ${a === _faturaFiltroAnoAtivo ? "selected" : ""}>${a}</option>`).join("");
-  filterBar.appendChild(selAno);
-  const selMes = el("select", { id: "filtroFaturaMes" });
-  selMes.innerHTML = `<option value="">Todos os meses</option>` + MESES_PT.map((nome, i) => {
-    const v = String(i + 1).padStart(2, "0");
-    return `<option value="${v}" ${v === _faturaFiltroMesAtivo ? "selected" : ""}>${nome}</option>`;
-  }).join("");
-  filterBar.appendChild(selMes);
+  filterBar.classList.add("filtro-linha");
+  const camposPeriodoFat = criarCamposPeriodo(filterBar, { ini: _faturaFiltroIni, fim: _faturaFiltroFim, aoMudar: (a, b) => { _faturaFiltroIni = a; _faturaFiltroFim = b; refresh(); } });
+  filterBar.appendChild(el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;", onclick: () => camposPeriodoFat.definir("", "") }, "Ver todos os meses"));
   container.appendChild(filterBar);
 
   let statusFiltroAtivo = _faturaFiltroStatusAtivo;
@@ -3390,12 +3377,10 @@ async function renderFaturasView(container) {
     panelWrap.innerHTML = "";
     const cartaoFiltro = selCartao.value || null;
     const statusFiltro = statusFiltroAtivo || null;
-    const anoFiltro = selAno.value || null;
     let faturas = await calcularFaturas({ cartaoIdFiltro: cartaoFiltro });
     if (statusFiltro) faturas = faturas.filter(f => f.status === statusFiltro);
-    if (anoFiltro) faturas = faturas.filter(f => f.mesReferencia.startsWith(anoFiltro));
-    const mesFiltro = selMes.value || null;
-    if (mesFiltro) faturas = faturas.filter(f => f.mesReferencia.slice(5, 7) === mesFiltro);
+    const perFat = normalizarPeriodo(_faturaFiltroIni, _faturaFiltroFim);
+    if (perFat.ini) faturas = faturas.filter(f => f.mesReferencia >= perFat.ini && f.mesReferencia <= perFat.fim);
     _faturasCacheAtual = faturas;
     atualizarBarraSelecao();
 
@@ -3518,8 +3503,6 @@ async function renderFaturasView(container) {
   }
 
   selCartao.addEventListener("change", () => { _faturaFiltroCartaoAtivo = selCartao.value; refresh(); });
-  selAno.addEventListener("change", () => { _faturaFiltroAnoAtivo = selAno.value; refresh(); });
-  selMes.addEventListener("change", () => { _faturaFiltroMesAtivo = selMes.value; refresh(); });
   await refresh();
 }
 
@@ -5316,7 +5299,8 @@ function excluirCategoria(cat) {
    contasPagarReceber.js — Contas a pagar / Contas a receber
    ============================================================ */
 
-let _cpMesFiltro = null; // "YYYY-MM" ou "" pra todos os meses
+let _cpMesFiltro = null; // início do período "YYYY-MM" ou "" pra todos os meses
+let _cpMesFimFiltro = null; // fim do período "YYYY-MM" (vazio = só o mês de início)
 let _cpStatusFiltro = ""; // "" | "vencido" | "aberto" | "pago"
 
 async function renderContasPagarView(container) {
@@ -5324,6 +5308,7 @@ async function renderContasPagarView(container) {
   const contas = await DB.getAll("contas");
   const cartoes = await DB.getAll("cartoes");
   if (_cpMesFiltro === null) _cpMesFiltro = currentMesRef();
+  if (_cpMesFimFiltro === null) _cpMesFimFiltro = _cpMesFiltro;
 
   container.appendChild(el("span", { class: "module-badge" }, "Contas a Pagar"));
 
@@ -5334,9 +5319,13 @@ async function renderContasPagarView(container) {
   ]));
 
   const filtroWrap = el("div", { class: "filtro-linha", style: "display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;" });
-  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "Mês:"));
-  const inputMes = el("input", { type: "month", value: _cpMesFiltro });
+  // Período: de um mês até outro (ex.: janeiro a março). Para um mês só, deixe os dois iguais.
+  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "De:"));
+  const inputMes = el("input", { type: "month", value: _cpMesFiltro, title: "Mês inicial" });
   filtroWrap.appendChild(inputMes);
+  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "até:"));
+  const inputMesFim = el("input", { type: "month", value: _cpMesFimFiltro, title: "Mês final" });
+  filtroWrap.appendChild(inputMesFim);
   const btnTodos = el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;" }, "Ver todos os meses");
   filtroWrap.appendChild(btnTodos);
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0 0 0 8px;" }, "Status:"));
@@ -5368,8 +5357,12 @@ async function renderContasPagarView(container) {
     const todasFaturas = await calcularFaturas({});
     const hoje = todayISO();
 
-    const bateMes = (mesRef) => !_cpMesFiltro || mesRef === _cpMesFiltro;
-    const bateMesPorData = (dataISO) => !_cpMesFiltro || (dataISO && dataISO.slice(0, 7) === _cpMesFiltro);
+    // Período escolhido (se só um lado estiver preenchido, vale só aquele mês; se estiver invertido, desinverte).
+    let perIni = _cpMesFiltro || _cpMesFimFiltro || "";
+    let perFim = _cpMesFimFiltro || _cpMesFiltro || "";
+    if (perIni && perFim && perIni > perFim) [perIni, perFim] = [perFim, perIni];
+    const bateMes = (mesRef) => !perIni || (!!mesRef && mesRef >= perIni && mesRef <= perFim);
+    const bateMesPorData = (dataISO) => !perIni || (!!dataISO && bateMes(dataISO.slice(0, 7)));
 
     const cpDoMes = todasContasPagar.filter(i => bateMesPorData(i.vencimento));
     const despesasDoMes = todosLancamentos.filter(l => l.tipo === "despesa" && bateMes(mesEfetivoDoLancamento(l)));
@@ -5389,7 +5382,9 @@ async function renderContasPagarView(container) {
 
     kpisWrap.innerHTML = "";
     const grid = el("div", { class: "grid-cards" });
-    grid.appendChild(kpiCard("Receita do mês", fmtMoney(totalReceita), _cpMesFiltro ? mesRefLabel(_cpMesFiltro) : "Todos os meses", "info"));
+    const umMesSo = !perIni || perIni === perFim;
+    grid.appendChild(kpiCard(umMesSo ? "Receita do mês" : "Receita do período", fmtMoney(totalReceita),
+      !perIni ? "Todos os meses" : (umMesSo ? mesRefLabel(perIni) : `${mesRefLabel(perIni)} a ${mesRefLabel(perFim)}`), "info"));
     grid.appendChild(kpiCard("Despesas previstas", fmtMoney(totalDespesaPrevista), "Contas + despesas + faturas", "neg"));
     grid.appendChild(kpiCard("Já pago", fmtMoney(totalJaPago), "", "pos"));
     grid.appendChild(kpiCard("Em aberto", fmtMoney(Math.max(0, totalEmAberto)), "", totalEmAberto > 0 ? "warn" : "pos"));
@@ -5475,8 +5470,14 @@ async function renderContasPagarView(container) {
     ativarSomaArrastar(tbody);
   }
 
-  inputMes.addEventListener("change", () => { _cpMesFiltro = inputMes.value; refresh(); });
-  btnTodos.addEventListener("click", () => { _cpMesFiltro = ""; inputMes.value = ""; refresh(); });
+  inputMes.addEventListener("change", () => {
+    _cpMesFiltro = inputMes.value;
+    // Se o fim ficou vazio ou antes do início, acompanha o início (vira um mês só).
+    if (!_cpMesFimFiltro || (_cpMesFiltro && _cpMesFimFiltro < _cpMesFiltro)) { _cpMesFimFiltro = _cpMesFiltro; inputMesFim.value = _cpMesFiltro; }
+    refresh();
+  });
+  inputMesFim.addEventListener("change", () => { _cpMesFimFiltro = inputMesFim.value; refresh(); });
+  btnTodos.addEventListener("click", () => { _cpMesFiltro = ""; _cpMesFimFiltro = ""; inputMes.value = ""; inputMesFim.value = ""; refresh(); });
   selStatus.addEventListener("change", () => { _cpStatusFiltro = selStatus.value; refresh(); });
 
   await refresh();
@@ -6589,6 +6590,33 @@ function relDataBR(iso) {
   const [y, m, d] = iso.slice(0, 10).split("-");
   return `${d}/${m}/${y}`;
 }
+// Filtro de período usado nas telas (De: mês até: mês). Vazio nos dois = todos os meses.
+// Se só um lado estiver preenchido, vale só aquele mês; se estiver invertido, desinverte.
+function normalizarPeriodo(ini, fim) {
+  let a = ini || fim || "", b = fim || ini || "";
+  if (a && b && a > b) [a, b] = [b, a];
+  return { ini: a, fim: b };
+}
+function rotuloPeriodo(ini, fim) {
+  if (!ini) return "Todos os meses";
+  return ini === fim ? mesRefLabel(ini) : `${mesRefLabel(ini)} a ${mesRefLabel(fim)}`;
+}
+function criarCamposPeriodo(container, { ini, fim, aoMudar }) {
+  const rot = (t) => el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, t);
+  const inIni = el("input", { type: "month", value: ini || "", title: "Mês inicial" });
+  const inFim = el("input", { type: "month", value: fim || "", title: "Mês final" });
+  container.appendChild(rot("De:")); container.appendChild(inIni);
+  container.appendChild(rot("até:")); container.appendChild(inFim);
+  inIni.addEventListener("change", () => {
+    if (!inFim.value || (inIni.value && inFim.value < inIni.value)) inFim.value = inIni.value;
+    aoMudar(inIni.value, inFim.value);
+  });
+  inFim.addEventListener("change", () => aoMudar(inIni.value, inFim.value));
+  return {
+    definir(a, b) { inIni.value = a || ""; inFim.value = b || ""; aoMudar(inIni.value, inFim.value); }
+  };
+}
+
 function relListaMeses(mesIni, mesFim) {
   const out = [];
   let [y, m] = mesIni.split("-").map(Number);
@@ -7145,15 +7173,11 @@ async function renderRelatoriosView(container) {
   container.appendChild(moduleTag);
   container.appendChild(criarPainelExportacao());
 
-  const selMes = el("select");
-  MESES_PT.forEach((m, idx) => selMes.appendChild(el("option", { value: idx+1 }, m)));
-  selMes.value = now.getMonth() + 1;
-  const selAno = el("select");
-  for (let y = now.getFullYear() - 3; y <= now.getFullYear() + 1; y++) selAno.appendChild(el("option", { value: y }, String(y)));
-  selAno.value = now.getFullYear();
-  filterBar.appendChild(el("span", { style: "font-size:12.5px;color:var(--text-muted);font-weight:600;" }, "Relatório mensal:"));
-  filterBar.appendChild(selMes);
-  filterBar.appendChild(selAno);
+  // Relatório do período (de um mês até outro; para um mês só, deixe os dois iguais).
+  let relIni = currentMesRef(), relFim = currentMesRef();
+  filterBar.classList.add("filtro-linha");
+  filterBar.appendChild(el("span", { style: "font-size:12.5px;color:var(--text-muted);font-weight:600;" }, "Relatório do período:"));
+  criarCamposPeriodo(filterBar, { ini: relIni, fim: relFim, aoMudar: (a, b) => { relIni = a; relFim = b; refreshMensal(); } });
   container.appendChild(filterBar);
 
   const mensalWrap = el("div", { id: "relatorioMensalWrap" });
@@ -7161,10 +7185,18 @@ async function renderRelatoriosView(container) {
 
   async function refreshMensal() {
     mensalWrap.innerHTML = "";
-    const mesRef = `${selAno.value}-${String(selMes.value).padStart(2,"0")}`;
-    const r = await calcularResumoMes(mesRef);
+    const per = normalizarPeriodo(relIni, relFim);
+    if (!per.ini) { per.ini = currentMesRef(); per.fim = per.ini; }
+    // Soma o resumo de cada mês do período
+    const campos = ["totalReceitas", "totalDespesas", "totalFaturas", "faturasPagas", "faturasAbertas", "totalCP", "totalCR", "resultado"];
+    const r = Object.fromEntries(campos.map(c => [c, 0]));
+    for (const mesRef of relListaMeses(per.ini, per.fim)) {
+      const rm = await calcularResumoMes(mesRef);
+      campos.forEach(c => { r[c] += Number(rm[c] || 0); });
+    }
+    const umMes = per.ini === per.fim;
     const panel = el("div", { class: "panel" });
-    panel.appendChild(el("div", { class: "panel-header" }, [el("h2", {}, `Relatório de ${mesRefLabel(mesRef)}`)]));
+    panel.appendChild(el("div", { class: "panel-header" }, [el("h2", {}, `Relatório de ${rotuloPeriodo(per.ini, per.fim)}`)]));
     const grid = el("div", { class: "grid-cards" });
     grid.appendChild(kpiCard("Receitas", fmtMoney(r.totalReceitas), "", "info"));
     grid.appendChild(kpiCard("Despesas", fmtMoney(r.totalDespesas), "", "neg"));
@@ -7173,12 +7205,10 @@ async function renderRelatoriosView(container) {
     grid.appendChild(kpiCard("Faturas em aberto", fmtMoney(r.faturasAbertas), "", r.faturasAbertas > 0 ? "neg" : ""));
     grid.appendChild(kpiCard("Contas a pagar", fmtMoney(r.totalCP), "", "neg"));
     grid.appendChild(kpiCard("Contas a receber", fmtMoney(r.totalCR), "", "info"));
-    grid.appendChild(kpiCard("Resultado do mês", fmtMoney(r.resultado), "Receitas - Despesas", r.resultado >= 0 ? "info" : "neg"));
+    grid.appendChild(kpiCard(umMes ? "Resultado do mês" : "Resultado do período", fmtMoney(r.resultado), "Receitas - Despesas", r.resultado >= 0 ? "info" : "neg"));
     panel.appendChild(grid);
     mensalWrap.appendChild(panel);
   }
-  selMes.addEventListener("change", refreshMensal);
-  selAno.addEventListener("change", refreshMensal);
   await refreshMensal();
 
   const anoAtual = now.getFullYear();
@@ -7330,20 +7360,18 @@ async function renderRelatorioFiltroAvancado(container, anoAtual) {
 
   const panel = el("div", { class: "panel" });
   panel.appendChild(el("div", { class: "panel-header" }, [el("h2", {}, "Filtro Avançado — ver tudo de um período específico")]));
-  panel.appendChild(el("p", { class: "section-note", style: "margin-bottom:12px;" }, "Escolha o ano e, se quiser, uma categoria, subcategoria ou cartão específico. O resultado é clicável — clique nele pra ver a lista completa dos lançamentos."));
+  panel.appendChild(el("p", { class: "section-note", style: "margin-bottom:12px;" }, "Escolha o período (de um mês até outro) e, se quiser, uma categoria, subcategoria ou cartão específico. O resultado é clicável — clique nele pra ver a lista completa dos lançamentos."));
 
   const filtroWrap = el("div", { style: "display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;" });
-  const selAnoF = el("select");
-  for (let y = anoAtual - 4; y <= anoAtual + 1; y++) selAnoF.appendChild(el("option", { value: y }, String(y)));
-  selAnoF.value = anoAtual;
+  filtroWrap.classList.add("filtro-linha");
+  let avIni = `${anoAtual}-01`, avFim = `${anoAtual}-12`; // começa no ano atual inteiro
   const selCatF = el("select");
   selCatF.innerHTML = `<option value="">Todas as categorias</option>` + optionsHtml(categorias, "id", "nome", "");
   const selSubcatF = el("select");
   selSubcatF.innerHTML = `<option value="">Todas as subcategorias</option>`;
   const selCartaoF = el("select");
   selCartaoF.innerHTML = `<option value="">Todos os cartões</option>` + optionsHtml([...cartoes].sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR")), "id", "nome", "");
-  filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "Ano:"));
-  filtroWrap.appendChild(selAnoF);
+  criarCamposPeriodo(filtroWrap, { ini: avIni, fim: avFim, aoMudar: (a, b) => { avIni = a; avFim = b; renderResultado(); } });
   filtroWrap.appendChild(selCatF);
   filtroWrap.appendChild(selSubcatF);
   filtroWrap.appendChild(selCartaoF);
@@ -7365,19 +7393,20 @@ async function renderRelatorioFiltroAvancado(container, anoAtual) {
   atualizarSubcategorias();
 
   function calcularResultado() {
-    const ano = selAnoF.value;
+    const perAv = normalizarPeriodo(avIni, avFim);
+    const noPeriodo = (mesRef) => !perAv.ini || (!!mesRef && mesRef >= perAv.ini && mesRef <= perAv.fim);
     const catId = selCatF.value;
     const subcat = selSubcatF.value;
     const cartaoId = selCartaoF.value;
 
     const avulsasFiltradas = lancamentos.filter(l =>
       l.tipo === "despesa" &&
-      (l.data || "").startsWith(String(ano)) &&
+      noPeriodo((l.data || "").slice(0, 7)) &&
       (!catId || l.categoriaId === catId) &&
       (!subcat || l.subcategoria === subcat)
     );
     const parcelasFiltradas = subcat ? [] : parcelas.filter(p =>
-      (p.mesReferencia || "").startsWith(String(ano)) &&
+      noPeriodo(p.mesReferencia) &&
       (!catId || p.categoriaId === catId) &&
       (!cartaoId || p.cartaoId === cartaoId)
     );
@@ -7396,7 +7425,8 @@ async function renderRelatorioFiltroAvancado(container, anoAtual) {
     const total = itens.reduce((s, i) => s + i.valor, 0);
     const catNome = selCatF.value ? categorias.find(c => c.id === selCatF.value)?.nome : null;
     const cartaoNome = selCartaoF.value ? cartoes.find(c => c.id === selCartaoF.value)?.nome : null;
-    let subLabel = `${selAnoF.value}`;
+    const perAvR = normalizarPeriodo(avIni, avFim);
+    let subLabel = rotuloPeriodo(perAvR.ini, perAvR.fim);
     if (catNome) subLabel += ` · ${catNome}`;
     if (selSubcatF.value) subLabel += ` · ${selSubcatF.value}`;
     if (cartaoNome) subLabel += ` · ${cartaoNome}`;
@@ -7412,7 +7442,6 @@ async function renderRelatorioFiltroAvancado(container, anoAtual) {
   selCatF.addEventListener("change", () => { atualizarSubcategorias(); renderResultado(); });
   selSubcatF.addEventListener("change", renderResultado);
   selCartaoF.addEventListener("change", renderResultado);
-  selAnoF.addEventListener("change", renderResultado);
   renderResultado();
 }
 
