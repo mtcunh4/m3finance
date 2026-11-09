@@ -1633,11 +1633,23 @@ function calcularMesReferenciaFatura(dataCompraISO, diaFechamento) {
   return addMeses(mesRefCompra, 1);
 }
 
+// Pagamento parcial: quanto de uma despesa / conta a pagar já foi pago.
+// "Pago" = valor inteiro; "Parcialmente pago" = o que está em valorPago; resto = nada.
+function valorJaPago(item) {
+  const total = Number(item && item.valor) || 0;
+  if (!item) return 0;
+  if (item.status === "Pago") return total;
+  return Math.min(total, Math.max(0, Number(item.valorPago) || 0));
+}
+function valorRestante(item) {
+  return Math.max(0, Math.round(((Number(item && item.valor) || 0) - valorJaPago(item)) * 100) / 100);
+}
+
 function statusBadge(status) {
   const map = {
     "Aberta": "blue", "Fechada": "amber", "Paga": "green",
-    "Parcialmente paga": "amber", "Vencida": "amber", "Crédito": "red",
-    "Em aberto": "blue", "Pago": "green", "Vencido": "amber", "Parcialmente pago": "amber",
+    "Parcialmente paga": "blue", "Vencida": "amber", "Crédito": "red",
+    "Em aberto": "blue", "Pago": "green", "Vencido": "amber", "Parcialmente pago": "blue", "Pago parcial": "blue",
     "Pendente": "blue", "Recebido": "green", "Recebido parcialmente": "amber",
     "Previsto": "gray", "Efetivado": "green", "Recebida": "green"
   };
@@ -1922,9 +1934,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.12";
+const APP_VERSION = "5.13";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: botão Marcar como pago alinhado em todas as linhas";
+const APP_VERSION_DESC = "Pagamento parcial em Contas a Pagar: pague uma parte e depois o restante";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -2346,7 +2358,7 @@ async function renderDashboardView(container) {
 
     const receitaRecebida = receitasFiltradas.filter(l => l.status === "Recebido").reduce((s,l)=>s+l.valor,0);
     const receitaPrevista = receitasFiltradas.reduce((s,l)=>s+l.valor,0);
-    const despesaPaga = despesasFiltradas.filter(l => l.status === "Pago").reduce((s,l)=>s+l.valor,0);
+    const despesaPaga = despesasFiltradas.reduce((s,l)=>s+valorJaPago(l),0);
     const despesaPrevista = despesasFiltradas.reduce((s,l)=>s+l.valor,0);
 
     let faturasConsideradas = faturas.filter(f => inSet(f.mesReferencia));
@@ -2393,7 +2405,7 @@ async function renderDashboardView(container) {
     grid.appendChild(kpiCard("Despesas do período", fmtMoney(despesaPaga), `Previsto: ${fmtMoney(despesaPrevista)}`, "neg", () => abrirDrillDownLancamentos("Despesas do período (avulsas)", despesasFiltradas, categorias)));
     grid.appendChild(kpiCard("Total de faturas", fmtMoney(totalFaturas), "Cartões de crédito"));
     grid.appendChild(kpiCard("Despesa prevista total", fmtMoney(despesaPrevistaTotal), "Despesas avulsas + faturas de cartão", "neg", () => abrirDrillDownLancamentos("Despesa Prevista Total (avulsas + cartão)", [...despesasFiltradas, ...parcelasParaDrillDown.map(p => ({ ...p, tipo: "despesa", cartaoTag: true }))], categorias)));
-    const despesaAberta = despesasFiltradas.filter(l => l.status !== "Pago").reduce((s,l)=>s+l.valor,0);
+    const despesaAberta = despesasFiltradas.reduce((s,l)=>s+valorRestante(l),0);
     grid.appendChild(kpiCard("Despesas em aberto", fmtMoney(despesaAberta), "", despesaAberta > 0 ? "neg" : ""));
     grid.appendChild(kpiCard("Faturas em aberto", fmtMoney(faturasAbertas), "", faturasAbertas > 0 ? "neg" : ""));
     if (cartaoFiltro) grid.appendChild(kpiCard(kpiSaldoLabel, fmtMoney(kpiSaldoValor), kpiSaldoSub, kpiSaldoValor >= 0 ? "info" : "neg"));
@@ -4546,7 +4558,7 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
     const hojeLista = todayISO();
     const despesaVencida = (l) => l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !!l.data && l.data < hojeLista;
     if (statusFiltro === "__vencido") todos = todos.filter(despesaVencida);
-    else if (statusFiltro === "Previsto") todos = todos.filter(l => l.status === "Previsto" && !despesaVencida(l));
+    else if (statusFiltro === "Previsto") todos = todos.filter(l => (l.status === "Previsto" || l.status === "Parcialmente pago") && !despesaVencida(l));
     else if (statusFiltro) todos = todos.filter(l => l.status === statusFiltro);
     // Despesas vencidas (não pagas e com data já passada) aparecem sempre em cima.
     // Na tela de Despesas a ordem é: vencidas, a vencer e pagas por último.
@@ -4577,7 +4589,7 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
       const podeMarcar = l.tipo !== "compra_cartao" && !l.isTransferencia;
       // Igual a Contas a Pagar: despesa vencida mostra "Vencido" (amarelo) e o valor em vermelho;
       // despesa ainda no prazo ("Previsto" no banco) aparece como "Em aberto" (azul petróleo).
-      const statusTela = despesaVencida(l) ? "Vencido" : (l.tipo === "despesa" && l.status === "Previsto" ? "Em aberto" : l.status);
+      const statusTela = despesaVencida(l) ? "Vencido" : (l.tipo === "despesa" && l.status === "Previsto" ? "Em aberto" : (l.status === "Parcialmente pago" ? "Pago parcial" : l.status));
       tr.innerHTML = `
         <td>${dataLabel}</td>
         <td title="${l.recorrenciaId ? 'Lançamento recorrente (' + (l.recorrenciaFrequencia || 'Mensal') + ')' : ''}">${descComRecorrencia}${l.pagoDe ? `<div style="font-size:11.5px; color:var(--text-muted);">Pago de: ${escaparTexto(l.pagoDe)}</div>` : ""}</td>
@@ -4594,6 +4606,7 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
           onchange: async (e) => {
             const novoStatus = e.target.checked ? statusEfetivado : (l.tipo === "receita" ? "Pendente" : "Previsto");
             const atualizado = { ...l, status: novoStatus };
+            if (l.tipo === "despesa") atualizado.valorPago = null; // marcar/desmarcar zera o pagamento parcial
             if (l.tipo === "receita" && novoStatus === "Recebido" && !atualizado.dataRecebimento) atualizado.dataRecebimento = atualizado.data;
             await DB.put("lancamentos", atualizado);
             await logAction("editar", l.tipo, `Status de "${l.descricao}" alterado para ${novoStatus}`);
@@ -4807,7 +4820,7 @@ function abrirEditarLancamento(item) {
                <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Recebido"?"selected":""}>Recebido</option><option ${item.status==="Pendente"?"selected":""}>Pendente</option></select></div>`
             : `<div class="field"><label>Forma de pagamento</label><select id="ed_forma">${FORMAS_PAGAMENTO.map(f=>`<option ${item.formaPagamento===f?"selected":""}>${f}</option>`).join("")}</select></div>
                <div class="field"><label>Conta de pagamento</label><select id="ed_conta">${optionsHtml(contas, "id", "nomeConta", item.contaId)}</select></div>
-               <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Pago"?"selected":""}>Pago</option><option value="Previsto" ${item.status==="Previsto"?"selected":""}>Em aberto</option></select></div>`
+               <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Pago"?"selected":""}>Pago</option><option value="Previsto" ${item.status==="Previsto"?"selected":""}>Em aberto</option>${item.status==="Parcialmente pago" ? `<option value="Parcialmente pago" selected>Pago parcial (${fmtMoney(valorJaPago(item))})</option>` : ""}</select></div>`
           }
           <div class="field full">
             <label>Mês de lançamento (opcional)</label>
@@ -4839,6 +4852,7 @@ function abrirEditarLancamento(item) {
                 obs: document.getElementById("ed_obs").value
               };
               if (!isReceita) atualizado.formaPagamento = document.getElementById("ed_forma").value;
+              if (!isReceita && atualizado.status !== "Parcialmente pago") atualizado.valorPago = null; // trocou o status: zera o parcial
               if (isReceita && atualizado.status === "Recebido" && !atualizado.dataRecebimento) atualizado.dataRecebimento = atualizado.data;
               await DB.put("lancamentos", atualizado);
               Modal.close();
@@ -5011,7 +5025,7 @@ async function calcularSaldoConta(contaId, dataLimite = null) {
   let saldo = Number(conta.saldoInicial) || 0;
   lancamentos.forEach(l => {
     if (l.tipo === "receita" && l.status === "Recebido") saldo += l.valor;
-    if (l.tipo === "despesa" && l.status === "Pago") saldo -= l.valor;
+    if (l.tipo === "despesa") saldo -= valorJaPago(l); // pago inteiro ou só a parte já paga
   });
   pagamentosFatura.forEach(p => { saldo -= p.valorPago; });
   return Math.round(saldo * 100) / 100;
@@ -5083,7 +5097,7 @@ async function abrirExtratoConta(conta) {
 
         // Resumo: encontro de receita x despesa (só o que já foi realizado)
         const totalRecebido = lancamentos.filter(l => l.tipo === "receita" && l.status === "Recebido").reduce((s, l) => s + l.valor, 0);
-        const totalPago = lancamentos.filter(l => l.tipo === "despesa" && l.status === "Pago").reduce((s, l) => s + l.valor, 0);
+        const totalPago = lancamentos.filter(l => l.tipo === "despesa").reduce((s, l) => s + valorJaPago(l), 0);
         const saldoEncontro = totalRecebido - totalPago;
         const resumo = el("div", { class: "grid-cards", style: "margin-bottom:14px;" });
         resumo.appendChild(kpiCard("Total recebido", fmtMoney(totalRecebido), "Só receitas já recebidas", "info"));
@@ -5098,7 +5112,7 @@ async function abrirExtratoConta(conta) {
         const saldoPorId = {};
         cronologica.forEach(l => {
           if (l.tipo === "receita" && l.status === "Recebido") acumulado += l.valor;
-          if (l.tipo === "despesa" && l.status === "Pago") acumulado -= l.valor;
+          if (l.tipo === "despesa") acumulado -= valorJaPago(l);
           saldoPorId[l.id] = acumulado;
         });
 
@@ -5400,8 +5414,8 @@ async function renderContasPagarView(container) {
     const totalContasPagar = cpDoMes.reduce((s, i) => s + i.valor, 0);
     const totalFaturas = faturasDoMes.reduce((s, f) => s + f.total, 0);
     const totalDespesaPrevista = totalDespesaAvulsa + totalContasPagar + totalFaturas;
-    const totalJaPago = despesasDoMes.filter(l => l.status === "Pago").reduce((s, l) => s + l.valor, 0)
-      + cpDoMes.filter(i => i.status === "Pago").reduce((s, i) => s + i.valor, 0)
+    const totalJaPago = despesasDoMes.reduce((s, l) => s + valorJaPago(l), 0)
+      + cpDoMes.reduce((s, i) => s + valorJaPago(i), 0)
       + faturasDoMes.reduce((s, f) => s + f.pago, 0);
     const totalEmAberto = totalDespesaPrevista - totalJaPago;
 
@@ -5423,6 +5437,7 @@ async function renderContasPagarView(container) {
         return {
           tipo: "Conta a Pagar", descricao: i.descricao, categoriaCartao: cat ? cat.nome : "—",
           vencimento: i.vencimento, valor: i.valor, pago: i.status === "Pago",
+          parcial: i.status !== "Pago" && valorJaPago(i) > 0.005, jaPago: valorJaPago(i), restante: valorRestante(i),
           pagoInfo: i.status === "Pago" ? `${fmtDate(i.dataPagamento)}${contaPg ? " · " + contaPg.nomeConta : ""}${i.pagoDe ? " · pago de " + escaparTexto(i.pagoDe) : ""}` : "",
           onPagar: () => abrirPagarContaPagar(i, contas),
           onExcluir: () => excluirContaPagar(i)
@@ -5434,6 +5449,7 @@ async function renderContasPagarView(container) {
         return {
           tipo: "Despesa", descricao: l.descricao, categoriaCartao: cat ? cat.nome : "—",
           vencimento: l.data, valor: l.valor, pago: l.status === "Pago",
+          parcial: l.status !== "Pago" && valorJaPago(l) > 0.005, jaPago: valorJaPago(l), restante: valorRestante(l),
           pagoInfo: l.status === "Pago" ? `${fmtDate(l.data)}${contaPg ? " · " + contaPg.nomeConta : ""}${l.pagoDe ? " · pago de " + escaparTexto(l.pagoDe) : ""}` : "",
           onPagar: () => abrirPagarDespesaRapido(l, contas),
           onEditar: () => abrirEditarLancamento(l),
@@ -5445,7 +5461,8 @@ async function renderContasPagarView(container) {
         return {
           tipo: "Fatura", descricao: `Fatura ${cartao ? cartao.nome : ""}`, categoriaCartao: cartao ? cartao.nome : "—",
           vencimento: f.vencISO, valor: f.total, pago: f.saldoDevedor <= 0.005,
-          pagoInfo: f.pago > 0 ? `${fmtMoney(f.pago)} pago` : "",
+          parcial: f.saldoDevedor > 0.005 && f.pago > 0.005, jaPago: f.pago, restante: f.saldoDevedor,
+          pagoInfo: f.pago > 0 && f.saldoDevedor <= 0.005 ? `${fmtMoney(f.pago)} pago` : "",
           onPagar: () => abrirPagarFatura(f),
           onExcluir: null
         };
@@ -5469,7 +5486,11 @@ async function renderContasPagarView(container) {
 
     itensExibidos.forEach(item => {
       const vencida = !item.pago && item.vencimento && item.vencimento < hoje;
-      const status = item.pago ? "Pago" : (vencida ? "Vencido" : "Em aberto");
+      const status = item.pago ? "Pago" : (vencida ? "Vencido" : (item.parcial ? "Pago parcial" : "Em aberto"));
+      // Pagamento parcial: mostra quanto já foi pago e quanto falta (mesmo quando já venceu).
+      const infoParcial = item.parcial
+        ? `<div style="font-size:12px;"><span style="color:var(--blue); font-weight:600;">Pago ${fmtMoney(item.jaPago)}</span> · <span style="color:var(--text); font-weight:600;">falta ${fmtMoney(item.restante)}</span></div>`
+        : "";
       const tr = el("tr", { class: vencida ? "row-overdue" : "" });
       tr.dataset.valor = String(Math.abs(item.valor));
       tr.innerHTML = `
@@ -5479,7 +5500,7 @@ async function renderContasPagarView(container) {
         <td>${item.vencimento ? fmtDate(item.vencimento) : "—"}</td>
         <td class="num money ${vencida ? "neg" : "neutro"}">${fmtMoney(item.valor)}</td>
         <td><span class="badge ${statusBadge(status)}">${status}</span></td>
-        <td style="font-size:12px; color:var(--text-muted);">${item.pagoInfo}</td>
+        <td style="font-size:12px; color:var(--text-muted);">${infoParcial || item.pagoInfo}</td>
       `;
       const tdAction = el("td", { class: "row-actions" });
       if (!item.pago) {
@@ -5518,13 +5539,36 @@ function escaparTexto(s) {
 // abrir o formulário completo de edição.
 // "pagoDe" é só uma anotação livre (de qual conta/banco saiu o dinheiro): não
 // é ligada à lista de contas do app e não mexe em saldo nenhum.
+// Texto e campo do "quanto vai pagar agora", usados nos pagamentos de despesa e de conta a pagar.
+function htmlValorPagamento(item, idCampo) {
+  const total = Number(item.valor) || 0, jaPago = valorJaPago(item), restante = valorRestante(item);
+  const resumo = jaPago > 0.005
+    ? `<p class="section-note" style="margin:0 0 6px;">Total ${fmtMoney(total)} · já pago <strong>${fmtMoney(jaPago)}</strong> · falta <strong>${fmtMoney(restante)}</strong></p>`
+    : `<p class="section-note" style="margin:0 0 6px;">Total ${fmtMoney(total)}</p>`;
+  return `<div class="field full">${resumo}
+      <label>Valor pago agora (R$)</label>
+      <input id="${idCampo}" type="number" step="0.01" min="0.01" max="${restante}" value="${restante}">
+      <p class="section-note" style="margin-top:4px;">Para pagar só uma parte, coloque um valor menor. Depois é só voltar aqui e pagar o restante.</p>
+    </div>`;
+}
+// Lê o valor digitado e diz se quita tudo ou é parcial. Devolve null se o valor for inválido.
+function lerValorPagamento(item, idCampo) {
+  const restante = valorRestante(item);
+  const v = Math.round((parseFloat(document.getElementById(idCampo).value) || 0) * 100) / 100;
+  if (v <= 0) { showToast("Informe quanto foi pago", "error"); return null; }
+  if (v > restante + 0.005) { showToast(`O valor passa do que falta pagar (${fmtMoney(restante)})`, "error"); return null; }
+  const novoTotalPago = Math.round((valorJaPago(item) + v) * 100) / 100;
+  return { v, quita: v >= restante - 0.005, novoTotalPago };
+}
+
 function abrirPagarDespesaRapido(lancamento, contas) {
   Modal.open({
-    title: "Marcar despesa como paga",
+    title: valorJaPago(lancamento) > 0.005 ? "Pagar o restante da despesa" : "Marcar despesa como paga",
     sub: lancamento.descricao,
     bodyHtml: `
       <div class="form-grid">
-        <div class="field"><label>Data do pagamento</label><input id="dp_data" type="date" value="${lancamento.data || todayISO()}"></div>
+        ${htmlValorPagamento(lancamento, "dp_valor")}
+        <div class="field"><label>Data do pagamento</label><input id="dp_data" type="date" value="${valorJaPago(lancamento) > 0.005 ? todayISO() : (lancamento.data || todayISO())}"></div>
         <div class="field full">
           <label>Observação — de qual conta você pagou?</label>
           <input id="dp_pagoDe" type="text" maxlength="200" placeholder="Ex.: Nubank, conta da empresa, dinheiro..." value="${escaparTexto(lancamento.pagoDe || "")}">
@@ -5536,6 +5580,8 @@ function abrirPagarDespesaRapido(lancamento, contas) {
       {
         label: "Confirmar pagamento", class: "btn-primary",
         onClick: async () => {
+          const pg = lerValorPagamento(lancamento, "dp_valor");
+          if (!pg) return;
           const data = document.getElementById("dp_data").value || todayISO();
           // Sem escolha de conta: mantém a que o lançamento já tinha (ou a
           // primeira conta cadastrada, se não tinha nenhuma válida) — igual ao
@@ -5544,7 +5590,11 @@ function abrirPagarDespesaRapido(lancamento, contas) {
             ? lancamento.contaId
             : (contas[0] ? contas[0].id : (lancamento.contaId || null));
           const pagoDe = document.getElementById("dp_pagoDe").value.trim();
-          const atualizado = { ...lancamento, status: "Pago", data, contaId };
+          // Quitou: fica "Pago" (a data passa a ser a do pagamento, como antes).
+          // Parcial: fica "Parcialmente pago", guarda quanto já foi pago e mantém a data de vencimento.
+          const atualizado = pg.quita
+            ? { ...lancamento, status: "Pago", data, contaId, valorPago: null, dataPagamento: data }
+            : { ...lancamento, status: "Parcialmente pago", contaId, valorPago: pg.novoTotalPago, dataPagamento: data };
           // Só mexe no campo quando há o que gravar (ou o que limpar), assim o
           // pagamento comum continua funcionando mesmo antes do SQL de atualização.
           if (pagoDe) atualizado.pagoDe = pagoDe;
@@ -5558,9 +5608,11 @@ function abrirPagarDespesaRapido(lancamento, contas) {
             }
             throw err;
           }
-          await logAction("editar", "despesa", `"${lancamento.descricao}" marcada como paga`);
+          await logAction("editar", "despesa", pg.quita
+            ? `"${lancamento.descricao}" marcada como paga`
+            : `"${lancamento.descricao}": pagamento parcial de ${fmtMoney(pg.v)} (falta ${fmtMoney(valorRestante(atualizado))})`);
           Modal.close();
-          showToast("Despesa marcada como paga", "success");
+          showToast(pg.quita ? "Despesa marcada como paga" : `Pagamento parcial registrado. Falta ${fmtMoney(valorRestante(atualizado))}`, "success");
           App.refresh();
         }
       }
@@ -5585,10 +5637,11 @@ function excluirLancamentoRapido(lancamento) {
 
 function abrirPagarContaPagar(item, contas) {
   Modal.open({
-    title: "Registrar Pagamento",
+    title: valorJaPago(item) > 0.005 ? "Pagar o restante" : "Registrar Pagamento",
     sub: item.descricao,
     bodyHtml: `
       <div class="form-grid">
+        ${htmlValorPagamento(item, "cp_valor")}
         <div class="field"><label>Data do pagamento</label><input id="cp_data" type="date" value="${todayISO()}"></div>
         <div class="field"><label>Forma de pagamento</label><select id="cp_forma">${FORMAS_PAGAMENTO.map(f=>`<option>${f}</option>`).join("")}</select></div>
         <div class="field full">
@@ -5602,6 +5655,8 @@ function abrirPagarContaPagar(item, contas) {
       {
         label: "Confirmar pagamento", class: "btn-primary",
         onClick: async () => {
+          const pg = lerValorPagamento(item, "cp_valor");
+          if (!pg) return;
           const data = document.getElementById("cp_data").value || todayISO();
           const forma = document.getElementById("cp_forma").value;
           const pagoDe = document.getElementById("cp_pagoDe").value.trim();
@@ -5609,8 +5664,11 @@ function abrirPagarContaPagar(item, contas) {
           const contaId = (item.contaId && contas.some(c => c.id === item.contaId))
             ? item.contaId
             : (contas[0] ? contas[0].id : (item.contaId || null));
-          const atualizadoCp = { ...item, status: "Pago", dataPagamento: data, formaPagamento: forma, contaId };
-          const novoLanc = { tipo: "despesa", data, descricao: item.descricao, categoriaId: item.categoriaId, valor: item.valor, formaPagamento: forma, contaId, status: "Pago", recorrente: false, obs: "Pagamento de conta a pagar" };
+          const atualizadoCp = pg.quita
+            ? { ...item, status: "Pago", dataPagamento: data, formaPagamento: forma, contaId, valorPago: null }
+            : { ...item, status: "Parcialmente pago", dataPagamento: data, formaPagamento: forma, contaId, valorPago: pg.novoTotalPago };
+          // O dinheiro que saiu agora vira um lançamento pago (o valor desta parcela, não o total).
+          const novoLanc = { tipo: "despesa", data, descricao: pg.quita ? item.descricao : `${item.descricao} (pagamento parcial)`, categoriaId: item.categoriaId, valor: pg.v, formaPagamento: forma, contaId, status: "Pago", recorrente: false, obs: "Pagamento de conta a pagar" };
           if (pagoDe) { atualizadoCp.pagoDe = pagoDe; novoLanc.pagoDe = pagoDe; }
           else if (item.pagoDe) atualizadoCp.pagoDe = null;
           try {
@@ -5624,7 +5682,7 @@ function abrirPagarContaPagar(item, contas) {
             throw err;
           }
           Modal.close();
-          showToast("Conta paga com sucesso", "success");
+          showToast(pg.quita ? "Conta paga com sucesso" : `Pagamento parcial registrado. Falta ${fmtMoney(valorRestante(atualizadoCp))}`, "success");
           App.refresh();
         }
       }
@@ -6679,7 +6737,7 @@ function calcularModeloRelatorio(dados, opts) {
   despesas.forEach(l => {
     const c = pegaCat(l.categoriaId);
     c.avulsa += l.valor;
-    if (l.status === "Pago") c.avulsaPaga += l.valor; else c.avulsaAberta += l.valor;
+    c.avulsaPaga += valorJaPago(l); c.avulsaAberta += valorRestante(l);
   });
   parcelasPeriodo.forEach(p => { pegaCat(p.categoriaId).cartao += p.valor; });
   const porCategoria = Object.values(cats).map(c => ({ ...c, total: c.avulsa + c.cartao }))
@@ -6744,7 +6802,7 @@ function calcularModeloRelatorio(dados, opts) {
 
   const totalReceitas = soma(receitas, l => l.valor);
   const totalAvulsas = soma(despesas, l => l.valor);
-  const totalAvulsasPagas = soma(despesas.filter(l => l.status === "Pago"), l => l.valor);
+  const totalAvulsasPagas = soma(despesas, l => valorJaPago(l));
   const totalCartao = soma(parcelasPeriodo, p => p.valor);
 
   return {

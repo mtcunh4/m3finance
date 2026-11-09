@@ -179,6 +179,7 @@ model contasPagar {
   created_at     DateTime?  @default(now()) @db.Timestamptz(6)
   workspace_id   String     @db.Uuid
   pagoDe         String?
+  valorPago      Decimal?   @db.Decimal
   usuarios       usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
   workspaces     workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -304,6 +305,7 @@ model lancamentos {
   abastecimentoId       String?
   tipoItem              String?
   pagoDe                String?
+  valorPago             Decimal?   @db.Decimal
   usuarios              usuarios?  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
   workspaces            workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
