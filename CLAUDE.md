@@ -7,5 +7,6 @@
 - Toda regra de acesso fica no banco: a tela só usa `/api/fin`, que chama as funções `fin_*` (conferem espaço e papel). Não crie rotas que leiam tabelas direto.
 - Mudança no banco = nova pasta em `prisma/migrations/` com data e hora no nome. Nunca edite uma migração já publicada.
 - A cada mudança publicada, suba `APP_VERSION`/`APP_VERSION_DESC` em `public/app.html` e a versão em `package.json`.
+- Numeração das versões: só um dígito depois do ponto. Depois de x.9 vem a (x+1).0 (ex.: 6.8, 6.9, 7.0; nunca 6.10). Em `package.json` fica com `.0` no fim (6.7 → 6.7.0).
 - Antes de publicar: `npx tsc --noEmit` e `npx next build` sem erros.
 - Nunca grave chaves, senhas, dados financeiros ou cópias de segurança no repositório.
