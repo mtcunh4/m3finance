@@ -2025,9 +2025,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.15";
+const APP_VERSION = "5.16";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas de pagamento em ordem alfabética";
+const APP_VERSION_DESC = "Pagar fatura: mostra quanto já foi pago e quanto falta, como nas despesas";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4079,10 +4079,14 @@ function abrirPagarFatura(fatura) {
         <div class="field full">
           <label>Fatura</label>
           <div style="font-size:14px;font-weight:700;color:var(--heading);">${fatura.cartao?.nome} — ${mesRefLabel(fatura.mesReferencia)}</div>
-          <div class="section-note">Saldo devedor atual: <strong>${fmtMoney(fatura.saldoDevedor)}</strong></div>
+        </div>
+        <div class="field full">
+          <p class="section-note" style="margin:0 0 6px;">Total ${fmtMoney(fatura.total)}${fatura.pago > 0.005 ? ` · já pago <strong>${fmtMoney(fatura.pago)}</strong>` : ""} · falta <strong>${fmtMoney(fatura.saldoDevedor)}</strong></p>
+          <label>Valor pago agora (R$)</label>
+          <input id="p_valor" type="number" step="0.01" min="0.01" value="${Math.round(fatura.saldoDevedor * 100) / 100}">
+          <p class="section-note" style="margin-top:4px;">Para pagar só uma parte, coloque um valor menor. Depois é só voltar aqui e pagar o restante.</p>
         </div>
         <div class="field"><label>Data do pagamento</label><input id="p_data" type="date" value="${todayISO()}"></div>
-        <div class="field"><label>Valor pago (R$)</label><input id="p_valor" type="number" step="0.01" value="${fatura.saldoDevedor}"></div>
         ${campoContaPagamentoHtml("p_pagoDe", "")}
         <div class="field full"><label>Conta bancária utilizada</label>
           <select id="p_conta">${optionsHtml(contas, "id", "nomeConta", "")}</select>
@@ -4091,7 +4095,7 @@ function abrirPagarFatura(fatura) {
       </div>
     `;
     Modal.open({
-      title: "Pagar Fatura",
+      title: fatura.pago > 0.005 ? "Pagar o restante da fatura" : "Pagar Fatura",
       sub: "Registrar pagamento e debitar da conta bancária selecionada.",
       bodyHtml,
       actions: [
@@ -4135,7 +4139,8 @@ async function registrarPagamentoFatura(fatura, { data, valor, contaId, obs, pag
     cartaoId: fatura.cartaoId, mesReferencia: fatura.mesReferencia,
     valorPago: valor, data, contaId, obs, pagoDe: pagoDe || null
   });
-  showToast("Pagamento registrado com sucesso", "success");
+  const falta = Math.round((fatura.saldoDevedor - valor) * 100) / 100;
+  showToast(falta > 0.005 ? `Pagamento parcial registrado. Falta ${fmtMoney(falta)}` : "Fatura paga com sucesso", "success");
   App.refresh();
 }
 
