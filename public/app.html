@@ -2025,9 +2025,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.16";
+const APP_VERSION = "5.17";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Pagar fatura: mostra quanto já foi pago e quanto falta, como nas despesas";
+const APP_VERSION_DESC = "Contas a Pagar: ordenar por valor ou vencimento, mantendo vencidas, a vencer e pagas";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5487,6 +5487,7 @@ function excluirCategoria(cat) {
 let _cpMesFiltro = null; // início do período "YYYY-MM" ou "" pra todos os meses
 let _cpMesFimFiltro = null; // fim do período "YYYY-MM" (vazio = só o mês de início)
 let _cpStatusFiltro = ""; // "" | "vencido" | "aberto" | "pago"
+let _cpOrdem = "venc_asc"; // venc_asc | venc_desc | valor_asc | valor_desc
 
 async function renderContasPagarView(container) {
   const categorias = await DB.getAll("categorias");
@@ -5522,6 +5523,18 @@ async function renderContasPagarView(container) {
   ]);
   selStatus.value = _cpStatusFiltro;
   filtroWrap.appendChild(selStatus);
+  // Ordenar dentro de cada grupo (vencidas, a vencer e pagas continuam nessa ordem)
+  const grupoOrdenar = el("span", { style: "display:inline-flex; align-items:center; gap:8px; margin-left:8px;" });
+  grupoOrdenar.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "Ordenar por:"));
+  const selOrdem = el("select", { title: "A ordem vale dentro de cada grupo: vencidas, a vencer e pagas" }, [
+    el("option", { value: "venc_asc" }, "Vencimento: mais antigo"),
+    el("option", { value: "venc_desc" }, "Vencimento: mais recente"),
+    el("option", { value: "valor_asc" }, "Valor: menor para maior"),
+    el("option", { value: "valor_desc" }, "Valor: maior para menor")
+  ]);
+  selOrdem.value = _cpOrdem;
+  grupoOrdenar.appendChild(selOrdem);
+  filtroWrap.appendChild(grupoOrdenar); // rótulo e lista ficam juntos ao quebrar a linha
   panel.appendChild(filtroWrap);
 
   const kpisWrap = el("div", { id: "cpKpisWrap", style: "margin-bottom:16px;" });
@@ -5619,7 +5632,16 @@ async function renderContasPagarView(container) {
     ];
     // Ordem: vencidas, depois a vencer, depois pagas; dentro de cada grupo, por vencimento.
     const grupoOrdem = (i) => i.pago ? 2 : (i.vencimento && i.vencimento < hoje ? 0 : 1);
-    itensConsolidados.sort((a, b) => (grupoOrdem(a) - grupoOrdem(b)) || (a.vencimento || "").localeCompare(b.vencimento || ""));
+    // Primeiro o grupo (vencidas, a vencer, pagas); dentro dele, a ordem escolhida.
+    const porVenc = (a, b) => (a.vencimento || "").localeCompare(b.vencimento || "");
+    const porValor = (a, b) => (Number(a.valor) || 0) - (Number(b.valor) || 0);
+    const criterio = {
+      venc_asc: porVenc,
+      venc_desc: (a, b) => porVenc(b, a),
+      valor_asc: (a, b) => porValor(a, b) || porVenc(a, b),
+      valor_desc: (a, b) => porValor(b, a) || porVenc(a, b)
+    }[_cpOrdem] || porVenc;
+    itensConsolidados.sort((a, b) => (grupoOrdem(a) - grupoOrdem(b)) || criterio(a, b));
     let itensExibidos = itensConsolidados;
     if (_cpStatusFiltro === "pago") itensExibidos = itensExibidos.filter(i => i.pago);
     else if (_cpStatusFiltro === "vencido") itensExibidos = itensExibidos.filter(i => grupoOrdem(i) === 0);
@@ -5684,6 +5706,7 @@ async function renderContasPagarView(container) {
   inputMesFim.addEventListener("change", () => { _cpMesFimFiltro = inputMesFim.value; refresh(); });
   btnTodos.addEventListener("click", () => { _cpMesFiltro = ""; _cpMesFimFiltro = ""; inputMes.value = ""; inputMesFim.value = ""; refresh(); });
   selStatus.addEventListener("change", () => { _cpStatusFiltro = selStatus.value; refresh(); });
+  selOrdem.addEventListener("change", () => { _cpOrdem = selOrdem.value; refresh(); });
 
   await refresh();
 }
