@@ -606,6 +606,10 @@ tbody tr[data-valor]{cursor:cell; user-select:none;}
 
 /* ===== Menu de ações (3 pontinhos) ===== */
 .kebab-wrap{position:relative; display:inline-block;}
+.pagamento-clicavel{cursor:pointer;}
+.row-actions button, .badge{white-space:nowrap;}
+.pagamento-clicavel:hover{background:var(--navy-light);}
+.ver-pagamento{font-size:11.5px; color:var(--blue); font-weight:600; margin-top:2px;}
 .kebab-vazio{display:inline-block; width:32px; height:30px; flex-shrink:0;}
 .kebab-btn{
   background:var(--card-bg); border:1px solid var(--border); border-radius:8px; width:32px; height:30px;
@@ -708,6 +712,9 @@ tbody tr[data-valor]{cursor:cell; user-select:none;}
       </button>
       <button class="nav-item" data-view="contasPagar">
         <span class="nav-ic">⏳</span> Contas a Pagar
+      </button>
+      <button class="nav-item" data-view="pagamentosConta">
+        <span class="nav-ic">🧾</span> Pagamentos por conta
       </button>
       <button class="nav-item" data-view="contasReceber">
         <span class="nav-ic">◈</span> Contas a Receber
@@ -1645,6 +1652,87 @@ function valorRestante(item) {
   return Math.max(0, Math.round(((Number(item && item.valor) || 0) - valorJaPago(item)) * 100) / 100);
 }
 
+/* ---------- Contas de pagamento (só para conferência) ----------
+   Lista de nomes guardada em APP_CONFIG.contasPagamento. Todo pagamento precisa dizer de
+   qual delas saiu; a tela "Pagamentos por conta" soma o que saiu de cada uma.
+   Não mexem no saldo das contas bancárias. */
+function listaContasPagamento() {
+  const l = Array.isArray(APP_CONFIG.contasPagamento) ? APP_CONFIG.contasPagamento : [];
+  return l.filter(x => typeof x === "string" && x.trim()).map(x => x.trim());
+}
+function campoContaPagamentoHtml(id, atual, extraClasse = "") {
+  const lista = listaContasPagamento();
+  const opcoes = [...lista];
+  if (atual && !opcoes.some(n => n === atual)) opcoes.unshift(atual); // anotação antiga, de antes da lista
+  return `<div class="field full ${extraClasse}">
+      <label>De qual conta você pagou? <span style="color:var(--red);">*</span></label>
+      <select id="${id}" onchange="document.getElementById('${id}_novaWrap').style.display = this.value === '__nova__' ? '' : 'none'">
+        <option value="">Escolha a conta…</option>
+        ${opcoes.map(n => `<option value="${escaparTexto(n)}" ${n === atual ? "selected" : ""}>${escaparTexto(n)}</option>`).join("")}
+        <option value="__nova__">+ Cadastrar nova conta de pagamento</option>
+      </select>
+      <div id="${id}_novaWrap" style="display:none; margin-top:6px;"><input id="${id}_nova" type="text" maxlength="80" placeholder="Nome da conta (ex.: Nubank, Itaú PJ, Dinheiro)"></div>
+      <p class="section-note" style="margin-top:4px;">Obrigatório. Serve para conferir, em "Pagamentos por conta", quanto saiu de cada conta. Não mexe no saldo das contas bancárias.</p>
+    </div>`;
+}
+// Lê a conta escolhida (cadastrando a nova, se for o caso). Devolve null se faltar.
+async function lerContaPagamento(id) {
+  const sel = document.getElementById(id);
+  if (!sel) return null;
+  let nome = sel.value;
+  if (nome === "__nova__") {
+    nome = (document.getElementById(id + "_nova").value || "").trim();
+    if (!nome) { showToast("Digite o nome da nova conta de pagamento", "error"); return null; }
+    const lista = listaContasPagamento();
+    const existente = lista.find(n => n.toLowerCase() === nome.toLowerCase());
+    if (existente) nome = existente;
+    else {
+      try { await salvarConfig({ contasPagamento: [...lista, nome] }); }
+      catch (e) { showToast("Não consegui cadastrar a nova conta. Tente de novo.", "error"); return null; }
+    }
+  }
+  if (!nome) { showToast("Indique de qual conta foi feito o pagamento", "error"); return null; }
+  return nome;
+}
+// Histórico de pagamentos de uma despesa / conta a pagar. Itens pagos antes do histórico
+// existir viram uma linha só, com o que se sabe (data, valor pago e a anotação "pago de").
+function historicoPagamentos(item) {
+  if (Array.isArray(item.pagamentos) && item.pagamentos.length) return item.pagamentos;
+  const pago = valorJaPago(item);
+  if (pago <= 0.005) return [];
+  return [{ data: item.dataPagamento || item.data || null, valor: pago, pagoDe: item.pagoDe || "" }];
+}
+
+// Janela "Ver pagamento": data, valor, conta e observação de cada pagamento.
+async function abrirVerPagamento(tipo, obj) {
+  let titulo = obj.descricao || "", linhas = [], totalItem = Number(obj.valor) || 0;
+  if (tipo === "fatura") {
+    const contas = await DB.getAll("contas");
+    const pags = (await DB.getAll("faturaPagamentos")).filter(p => p.cartaoId === obj.cartaoId && p.mesReferencia === obj.mesReferencia)
+      .sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+    titulo = `Fatura ${obj.cartao?.nome || ""} — ${mesRefLabel(obj.mesReferencia)}`;
+    totalItem = Number(obj.total) || 0;
+    linhas = pags.map(p => {
+      const banco = contas.find(c => c.id === p.contaId);
+      return { data: p.data, valor: Number(p.valorPago) || 0, conta: p.pagoDe || "", obs: [banco ? "Conta bancária: " + banco.nomeConta : "", p.obs || ""].filter(Boolean).join(" · ") };
+    });
+  } else {
+    linhas = historicoPagamentos(obj).map(h => ({ data: h.data, valor: Number(h.valor) || 0, conta: h.pagoDe || "", obs: "" }));
+    if (obj.obs && linhas.length) linhas[linhas.length - 1].obs = obj.obs;
+  }
+  const total = linhas.reduce((s, l) => s + l.valor, 0);
+  const falta = Math.max(0, totalItem - total);
+  const corpo = linhas.length
+    ? `<div class="table-wrap"><table class="data-table" style="min-width:0;"><thead><tr><th>Data</th><th class="num">Valor</th><th>Conta</th><th>Observação</th></tr></thead><tbody>
+        ${linhas.map(l => `<tr><td>${l.data ? fmtDate(l.data) : "—"}</td><td class="num money">${fmtMoney(l.valor)}</td>
+          <td>${l.conta ? `<strong>${escaparTexto(l.conta)}</strong>` : `<span style="color:var(--text-muted);">não indicada</span>`}</td>
+          <td style="font-size:12.5px; color:var(--text-muted);">${escaparTexto(l.obs || "") || "—"}</td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="section-note" style="margin-top:10px;">Total pago: <strong>${fmtMoney(total)}</strong>${falta > 0.005 ? ` · falta <strong>${fmtMoney(falta)}</strong>` : ""}</p>`
+    : `<p class="section-note">Nenhum pagamento registrado ainda.</p>`;
+  Modal.open({ title: "Pagamento", sub: titulo, bodyHtml: corpo, actions: [{ label: "Fechar", class: "btn-secondary", onClick: () => Modal.close() }] });
+}
+
 function statusBadge(status) {
   const map = {
     "Aberta": "blue", "Fechada": "amber", "Paga": "green",
@@ -1733,7 +1821,7 @@ function ativarSomaArrastar(tbody, options = {}) {
   }
 
   tbody.addEventListener("mousedown", (e) => {
-    if (e.target.closest("button, input, select, a, textarea, .kebab-btn, .kebab-menu")) return;
+    if (e.target.closest("button, input, select, a, textarea, .kebab-btn, .kebab-menu, .pagamento-clicavel")) return;
     const tr = e.target.closest("tr");
     if (!tr || tr.dataset.valor === undefined) return;
     arrastando = true;
@@ -1934,9 +2022,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.13";
+const APP_VERSION = "5.14";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Pagamento parcial em Contas a Pagar: pague uma parte e depois o restante";
+const APP_VERSION_DESC = "Contas de pagamento: escolha obrigatória ao pagar, tela Pagamentos por conta e Ver pagamento";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -3743,6 +3831,7 @@ function abrirLancarFaturaAntiga(cartoes) {
         </div>
         <div class="field" id="antiga_pagaDataWrap" style="display:none;"><label>Data do pagamento</label><input id="antiga_pagaData" type="date" value="${todayISO()}"></div>
         <div class="field" id="antiga_pagaContaWrap" style="display:none;"><label>Conta bancária utilizada</label><select id="antiga_pagaConta"></select></div>
+        <div class="field full" id="antiga_pagoDeWrap" style="display:none; padding:0;">${campoContaPagamentoHtml("antiga_pagoDe", "")}</div>
       </div>`,
     onMount: async (body) => {
       aplicarMascaraMoeda(body.querySelector("#antiga_valor"));
@@ -3754,6 +3843,7 @@ function abrirLancarFaturaAntiga(cartoes) {
       chk.addEventListener("change", () => {
         dataWrap.style.display = chk.checked ? "" : "none";
         contaWrap.style.display = chk.checked ? "" : "none";
+        body.querySelector("#antiga_pagoDeWrap").style.display = chk.checked ? "" : "none";
       });
     },
     actions: [
@@ -3768,6 +3858,8 @@ function abrirLancarFaturaAntiga(cartoes) {
           const jaPaga = document.getElementById("antiga_paga").checked;
           if (!cartaoId || !mesReferencia || !valorDesejado) return showToast("Preencha cartão, mês e valor", "error");
           if (jaPaga && !document.getElementById("antiga_pagaConta").value) return showToast("Escolha a conta bancária usada no pagamento", "error");
+          const pagoDeAntiga = jaPaga ? await lerContaPagamento("antiga_pagoDe") : null;
+          if (jaPaga && !pagoDeAntiga) return;
 
           const parcelasExistentes = (await DB.getAll("parcelas")).filter(p => p.cartaoId === cartaoId && p.mesReferencia === mesReferencia && !String(p.id).startsWith("ajuste_"));
           const somaExistente = parcelasExistentes.reduce((s, p) => s + p.valor, 0);
@@ -3796,7 +3888,7 @@ function abrirLancarFaturaAntiga(cartoes) {
             const pagamentosExistentes = (await DB.getAll("faturaPagamentos")).filter(p => p.cartaoId === cartaoId && p.mesReferencia === mesReferencia);
             if (pagamentosExistentes.length) await DB.deleteMany("faturaPagamentos", pagamentosExistentes.map(p => p.id));
             await DB.put("faturaPagamentos", {
-              cartaoId, mesReferencia, valorPago: valorDesejado, data: dataPagamento, contaId,
+              cartaoId, mesReferencia, valorPago: valorDesejado, data: dataPagamento, contaId, pagoDe: pagoDeAntiga,
               obs: "Registrado junto com o lançamento da fatura antiga"
             });
             mensagemExtra = " e marcada como paga";
@@ -3988,6 +4080,7 @@ function abrirPagarFatura(fatura) {
         </div>
         <div class="field"><label>Data do pagamento</label><input id="p_data" type="date" value="${todayISO()}"></div>
         <div class="field"><label>Valor pago (R$)</label><input id="p_valor" type="number" step="0.01" value="${fatura.saldoDevedor}"></div>
+        ${campoContaPagamentoHtml("p_pagoDe", "")}
         <div class="field full"><label>Conta bancária utilizada</label>
           <select id="p_conta">${optionsHtml(contas, "id", "nomeConta", "")}</select>
         </div>
@@ -4006,6 +4099,8 @@ function abrirPagarFatura(fatura) {
             const valor = parseFloat(document.getElementById("p_valor").value) || 0;
             if (valor <= 0) { showToast("Informe um valor válido", "error"); return; }
             if (!contas.length) { showToast("Cadastre uma conta bancária primeiro", "error"); return; }
+            const pagoDe = await lerContaPagamento("p_pagoDe");
+            if (!pagoDe) return;
             if (valor > fatura.saldoDevedor + 0.01) {
               const data = document.getElementById("p_data").value || todayISO();
               const contaId = document.getElementById("p_conta").value;
@@ -4016,14 +4111,14 @@ function abrirPagarFatura(fatura) {
                 message: `O valor informado (${fmtMoney(valor)}) é maior que o saldo devedor (${fmtMoney(fatura.saldoDevedor)}). Deseja confirmar mesmo assim?`,
                 confirmLabel: "Confirmar mesmo assim",
                 danger: false,
-                onConfirm: () => registrarPagamentoFatura(fatura, { data, valor, contaId, obs })
+                onConfirm: () => registrarPagamentoFatura(fatura, { data, valor, contaId, obs, pagoDe })
               });
               return;
             }
             const data = document.getElementById("p_data").value || todayISO();
             const contaId = document.getElementById("p_conta").value;
             const obs = document.getElementById("p_obs").value;
-            await registrarPagamentoFatura(fatura, { data, valor, contaId, obs });
+            await registrarPagamentoFatura(fatura, { data, valor, contaId, obs, pagoDe });
             Modal.close();
           }
         }
@@ -4032,10 +4127,10 @@ function abrirPagarFatura(fatura) {
   });
 }
 
-async function registrarPagamentoFatura(fatura, { data, valor, contaId, obs }) {
+async function registrarPagamentoFatura(fatura, { data, valor, contaId, obs, pagoDe }) {
   await DB.put("faturaPagamentos", {
     cartaoId: fatura.cartaoId, mesReferencia: fatura.mesReferencia,
-    valorPago: valor, data, contaId, obs
+    valorPago: valor, data, contaId, obs, pagoDe: pagoDe || null
   });
   showToast("Pagamento registrado com sucesso", "success");
   App.refresh();
@@ -4153,6 +4248,7 @@ async function renderFormPorTipo(tipo, container) {
         <div class="field"><label>Conta de pagamento</label><select id="fl_conta">${optionsHtml(contas, "id", "nomeConta", "")}</select></div>
         <div class="field"><label>Status</label><select id="fl_status"><option>Pago</option><option value="Previsto">Em aberto</option></select></div>
         <div class="field" id="fl_dataPagamentoWrap"><label>Data do pagamento</label><input id="fl_dataPagamento" type="date" value="${todayISO()}"></div>
+        <div class="field full" id="fl_pagoDeWrap" style="padding:0;">${campoContaPagamentoHtml("fl_pagoDe", "")}</div>
         <div class="field full">
           <label>Mês de lançamento (opcional)</label>
           <input id="fl_mesRef" type="month" value="">
@@ -4315,7 +4411,11 @@ async function _salvarLancamentoAtualInterno(tipo, v) {
     if (!valor || !v("fl_desc")) return showToast("Preencha descrição e valor", "error");
     const recorrente = v("fl_recorrente") === "sim";
     const mesForcado = v("fl_mesRef") || null;
-    const base = { tipo: "despesa", data: v("fl_data"), descricao: v("fl_desc"), categoriaId: v("fl_cat"), subcategoria: v("fl_subcat") || null, valor, formaPagamento: v("fl_forma"), contaId: v("fl_conta"), status: v("fl_status"), dataPagamento: v("fl_status") === "Pago" ? v("fl_dataPagamento") : null, recorrente, obs: v("fl_obs"), mesReferencia: mesForcado };
+    // Pago: precisa dizer de qual conta de pagamento saiu.
+    let pagoDeNovo = null;
+    if (v("fl_status") === "Pago") { pagoDeNovo = await lerContaPagamento("fl_pagoDe"); if (!pagoDeNovo) return; }
+    const base = { tipo: "despesa", data: v("fl_data"), descricao: v("fl_desc"), categoriaId: v("fl_cat"), subcategoria: v("fl_subcat") || null, valor, formaPagamento: v("fl_forma"), contaId: v("fl_conta"), status: v("fl_status"), dataPagamento: v("fl_status") === "Pago" ? v("fl_dataPagamento") : null, recorrente, obs: v("fl_obs"), mesReferencia: mesForcado,
+      pagoDe: pagoDeNovo, pagamentos: pagoDeNovo ? [{ data: v("fl_dataPagamento") || v("fl_data"), valor, pagoDe: pagoDeNovo }] : null };
     if (recorrente) {
       const semPrazo = document.getElementById("fl_semPrazo")?.checked || false;
       const intervaloMeses = parseInt(v("fl_freq")) || 1;
@@ -4330,7 +4430,8 @@ async function _salvarLancamentoAtualInterno(tipo, v) {
         // Só a ocorrência já vencida (data <= hoje) herda o status escolhido
         // (Pago); ocorrências futuras começam como Previsto.
         const statusLinha = d <= hojeISO ? base.status : "Previsto";
-        registros.push({ ...base, id: uid(), data: d, mesReferencia: mesRefLinha, status: statusLinha, dataPagamento: statusLinha === "Pago" ? d : null, recorrenciaId, recorrenciaFrequencia: freqLabel, recorrenciaSemPrazo: semPrazo, numero: i + 1, totalParcelas: semPrazo ? null : repeticoes });
+        registros.push({ ...base, id: uid(), data: d, mesReferencia: mesRefLinha, status: statusLinha, dataPagamento: statusLinha === "Pago" ? d : null,
+          pagoDe: statusLinha === "Pago" ? pagoDeNovo : null, pagamentos: statusLinha === "Pago" ? [{ data: d, valor, pagoDe: pagoDeNovo }] : null, recorrenciaId, recorrenciaFrequencia: freqLabel, recorrenciaSemPrazo: semPrazo, numero: i + 1, totalParcelas: semPrazo ? null : repeticoes });
       }
       await DB.bulkPut("lancamentos", registros);
       showToast(semPrazo ? `Despesa recorrente criada sem prazo (gerado ${repeticoes} meses à frente)` : `Despesa recorrente criada: ${repeticoes}x (${freqLabel.toLowerCase()})`, "success");
@@ -4401,7 +4502,11 @@ function ativarCampoDataPagamento(container) {
   const campoPagamento = container.querySelector("#fl_dataPagamento");
   if (!selStatus || !wrap || !campoData || !campoPagamento) return;
   let tocadoManualmente = false;
-  const atualizarVisibilidade = () => { wrap.style.display = selStatus.value === "Pago" ? "" : "none"; };
+  const wrapPagoDe = container.querySelector("#fl_pagoDeWrap");
+  const atualizarVisibilidade = () => {
+    wrap.style.display = selStatus.value === "Pago" ? "" : "none";
+    if (wrapPagoDe) wrapPagoDe.style.display = selStatus.value === "Pago" ? "" : "none"; // conta do pagamento só quando "Pago"
+  };
   selStatus.addEventListener("change", atualizarVisibilidade);
   campoData.addEventListener("input", () => { if (!tocadoManualmente) campoPagamento.value = campoData.value; });
   campoPagamento.addEventListener("input", () => { tocadoManualmente = true; });
@@ -4604,9 +4709,15 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
         wrapStatus.appendChild(el("input", {
           type: "checkbox", checked: l.status === statusEfetivado ? "checked" : null,
           onchange: async (e) => {
+            // Despesa: marcar como paga abre a janela de pagamento, que pede a conta.
+            if (l.tipo === "despesa" && e.target.checked) {
+              e.target.checked = false;
+              abrirPagarDespesaRapido(l, await DB.getAll("contas"));
+              return;
+            }
             const novoStatus = e.target.checked ? statusEfetivado : (l.tipo === "receita" ? "Pendente" : "Previsto");
             const atualizado = { ...l, status: novoStatus };
-            if (l.tipo === "despesa") atualizado.valorPago = null; // marcar/desmarcar zera o pagamento parcial
+            if (l.tipo === "despesa") { atualizado.valorPago = null; atualizado.pagamentos = null; } // desmarcar zera os pagamentos
             if (l.tipo === "receita" && novoStatus === "Recebido" && !atualizado.dataRecebimento) atualizado.dataRecebimento = atualizado.data;
             await DB.put("lancamentos", atualizado);
             await logAction("editar", l.tipo, `Status de "${l.descricao}" alterado para ${novoStatus}`);
@@ -4633,6 +4744,7 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
           { label: "Editar", onClick: () => abrirEditarLancamento(l) },
           { label: "Duplicar", onClick: () => duplicarLancamento(l) }
         ];
+        if (l.tipo === "despesa" && valorJaPago(l) > 0.005) acoes.unshift({ label: "Ver pagamento", onClick: () => abrirVerPagamento("lanc", l) });
         if (l.recorrenciaId) {
           acoes.push({ label: "Alterar valor a partir de agora", onClick: () => editarRecorrenciaFutura(l) });
           acoes.push({ label: "Cancelar próximas recorrências", onClick: () => cancelarRecorrenciasFuturas(l) });
@@ -4689,6 +4801,7 @@ function abrirLancarRetroativo(tipo) {
         </div>
         <div class="field" id="retro_pagaDataWrap"><label>Data ${isReceita ? "do recebimento" : "do pagamento"}</label><input id="retro_pagaData" type="date" value="${todayISO()}"></div>
         <div class="field" id="retro_pagaContaWrap"><label>Conta bancária utilizada</label><select id="retro_pagaConta"></select></div>
+        ${isReceita ? "" : `<div class="field full" id="retro_pagoDeWrap" style="padding:0;">${campoContaPagamentoHtml("retro_pagoDe", "")}</div>`}
         <div class="field"><label>Categoria</label><select id="fl_cat"></select></div>
         <div class="field"><label>Subcategoria (opcional)</label><select id="fl_subcat"><option value="">—</option></select></div>
         <div class="field"><label>Recorrente? (teve parcelas/ocorrências pra trás)</label>
@@ -4726,6 +4839,8 @@ function abrirLancarRetroativo(tipo) {
       const atualizarCamposPagamento = () => {
         dataWrap.style.display = chkPaga.checked ? "" : "none";
         contaWrap.style.display = chkPaga.checked ? "" : "none";
+        const w = body.querySelector("#retro_pagoDeWrap");
+        if (w) w.style.display = chkPaga.checked ? "" : "none";
       };
       chkPaga.addEventListener("change", atualizarCamposPagamento);
       atualizarCamposPagamento();
@@ -4757,12 +4872,15 @@ function abrirLancarRetroativo(tipo) {
           const dataPagamento = document.getElementById("retro_pagaData").value || dataAprox;
           const contaId = document.getElementById("retro_pagaConta").value || null;
           if (jaPaga && !contaId) return showToast("Escolha a conta bancária usada", "error");
+          const pagoDeRetro = (jaPaga && !isReceita) ? await lerContaPagamento("retro_pagoDe") : null;
+          if (jaPaga && !isReceita && !pagoDeRetro) return;
           const base = {
             tipo, data: jaPaga ? dataPagamento : dataAprox, descricao, valor, categoriaId, subcategoria,
             status: jaPaga ? (isReceita ? "Recebido" : "Pago") : (isReceita ? "Pendente" : "Previsto"),
             contaId: jaPaga ? contaId : null,
             mesReferencia: mes, obs: "Lançado retroativamente", recorrente
           };
+          if (pagoDeRetro) { base.pagoDe = pagoDeRetro; base.pagamentos = [{ data: base.data, valor, pagoDe: pagoDeRetro }]; }
           if (isReceita) base.dataRecebimento = jaPaga ? dataPagamento : null;
 
           if (recorrente) {
@@ -4784,6 +4902,7 @@ function abrirLancarRetroativo(tipo) {
               registros.push({
                 ...base, id: uid(), data: d, mesReferencia: mesRefLinha, status: statusLinha,
                 ...(isReceita ? { dataRecebimento: statusLinha === "Recebido" ? d : null } : {}),
+                ...(!isReceita ? { pagoDe: statusLinha === "Pago" ? pagoDeRetro : null, pagamentos: (statusLinha === "Pago" && pagoDeRetro) ? [{ data: d, valor, pagoDe: pagoDeRetro }] : null } : {}),
                 recorrenciaId, recorrenciaFrequencia: freqLabel, recorrenciaSemPrazo: semPrazo,
                 numero: i + 1, totalParcelas: semPrazo ? null : repeticoes
               });
@@ -4820,7 +4939,8 @@ function abrirEditarLancamento(item) {
                <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Recebido"?"selected":""}>Recebido</option><option ${item.status==="Pendente"?"selected":""}>Pendente</option></select></div>`
             : `<div class="field"><label>Forma de pagamento</label><select id="ed_forma">${FORMAS_PAGAMENTO.map(f=>`<option ${item.formaPagamento===f?"selected":""}>${f}</option>`).join("")}</select></div>
                <div class="field"><label>Conta de pagamento</label><select id="ed_conta">${optionsHtml(contas, "id", "nomeConta", item.contaId)}</select></div>
-               <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Pago"?"selected":""}>Pago</option><option value="Previsto" ${item.status==="Previsto"?"selected":""}>Em aberto</option>${item.status==="Parcialmente pago" ? `<option value="Parcialmente pago" selected>Pago parcial (${fmtMoney(valorJaPago(item))})</option>` : ""}</select></div>`
+               <div class="field"><label>Status</label><select id="ed_status"><option ${item.status==="Pago"?"selected":""}>Pago</option><option value="Previsto" ${item.status==="Previsto"?"selected":""}>Em aberto</option>${item.status==="Parcialmente pago" ? `<option value="Parcialmente pago" selected>Pago parcial (${fmtMoney(valorJaPago(item))})</option>` : ""}</select></div>
+               <div class="field full" id="ed_pagoDeWrap" style="padding:0; ${item.status === "Pago" ? "" : "display:none;"}">${campoContaPagamentoHtml("ed_pagoDe", item.pagoDe || "")}</div>`
           }
           <div class="field full">
             <label>Mês de lançamento (opcional)</label>
@@ -4832,7 +4952,11 @@ function abrirEditarLancamento(item) {
       Modal.open({
         title: `Editar ${isReceita ? "Receita" : "Despesa"}`,
         bodyHtml,
-        onMount: (body) => { aplicarMascaraMoeda(body.querySelector("#ed_valor"), item.valor); },
+        onMount: (body) => {
+          aplicarMascaraMoeda(body.querySelector("#ed_valor"), item.valor);
+          const selSt = body.querySelector("#ed_status"), wPg = body.querySelector("#ed_pagoDeWrap");
+          if (selSt && wPg) selSt.addEventListener("change", () => { wPg.style.display = selSt.value === "Pago" ? "" : "none"; });
+        },
         actions: [
           { label: "Cancelar", class: "btn-secondary", onClick: () => Modal.close() },
           {
@@ -4853,6 +4977,20 @@ function abrirEditarLancamento(item) {
               };
               if (!isReceita) atualizado.formaPagamento = document.getElementById("ed_forma").value;
               if (!isReceita && atualizado.status !== "Parcialmente pago") atualizado.valorPago = null; // trocou o status: zera o parcial
+              if (!isReceita && atualizado.status === "Pago") {
+                // Pago: precisa dizer de qual conta saiu
+                const pagoDeEd = await lerContaPagamento("ed_pagoDe");
+                if (!pagoDeEd) return;
+                atualizado.pagoDe = pagoDeEd;
+                if (item.status !== "Pago") {
+                  const falta = Math.max(0, Math.round((valor - valorJaPago(item)) * 100) / 100);
+                  atualizado.pagamentos = [...historicoPagamentos(item), { data: atualizado.data, valor: falta, pagoDe: pagoDeEd }];
+                } else if (Array.isArray(item.pagamentos) && item.pagamentos.length === 1) {
+                  atualizado.pagamentos = [{ ...item.pagamentos[0], pagoDe: pagoDeEd }];
+                }
+              } else if (!isReceita && atualizado.status === "Previsto") {
+                atualizado.pagamentos = null; // voltou a "Em aberto": nada pago
+              }
               if (isReceita && atualizado.status === "Recebido" && !atualizado.dataRecebimento) atualizado.dataRecebimento = atualizado.data;
               await DB.put("lancamentos", atualizado);
               Modal.close();
@@ -5440,6 +5578,7 @@ async function renderContasPagarView(container) {
           parcial: i.status !== "Pago" && valorJaPago(i) > 0.005, jaPago: valorJaPago(i), restante: valorRestante(i),
           pagoInfo: i.status === "Pago" ? `${fmtDate(i.dataPagamento)}${contaPg ? " · " + contaPg.nomeConta : ""}${i.pagoDe ? " · pago de " + escaparTexto(i.pagoDe) : ""}` : "",
           onPagar: () => abrirPagarContaPagar(i, contas),
+          onVer: () => abrirVerPagamento("cp", i),
           onExcluir: () => excluirContaPagar(i)
         };
       }),
@@ -5452,6 +5591,7 @@ async function renderContasPagarView(container) {
           parcial: l.status !== "Pago" && valorJaPago(l) > 0.005, jaPago: valorJaPago(l), restante: valorRestante(l),
           pagoInfo: l.status === "Pago" ? `${fmtDate(l.data)}${contaPg ? " · " + contaPg.nomeConta : ""}${l.pagoDe ? " · pago de " + escaparTexto(l.pagoDe) : ""}` : "",
           onPagar: () => abrirPagarDespesaRapido(l, contas),
+          onVer: () => abrirVerPagamento("lanc", l),
           onEditar: () => abrirEditarLancamento(l),
           onExcluir: () => excluirLancamentoRapido(l)
         };
@@ -5464,6 +5604,7 @@ async function renderContasPagarView(container) {
           parcial: f.saldoDevedor > 0.005 && f.pago > 0.005, jaPago: f.pago, restante: f.saldoDevedor,
           pagoInfo: f.pago > 0 && f.saldoDevedor <= 0.005 ? `${fmtMoney(f.pago)} pago` : "",
           onPagar: () => abrirPagarFatura(f),
+          onVer: () => abrirVerPagamento("fatura", f),
           onExcluir: null
         };
       })
@@ -5502,11 +5643,20 @@ async function renderContasPagarView(container) {
         <td><span class="badge ${statusBadge(status)}">${status}</span></td>
         <td style="font-size:12px; color:var(--text-muted);">${infoParcial || item.pagoInfo}</td>
       `;
+      // Clicar no "Pago em / conta" abre o detalhe do pagamento (data, valor, conta e observação).
+      if ((item.pago || item.parcial) && item.onVer) {
+        const tdInfo = tr.children[6];
+        tdInfo.classList.add("pagamento-clicavel");
+        tdInfo.title = "Clique para ver o pagamento";
+        tdInfo.appendChild(el("div", { class: "ver-pagamento" }, "🔍 Ver pagamento"));
+        tdInfo.addEventListener("click", (ev) => { ev.stopPropagation(); item.onVer(); });
+      }
       const tdAction = el("td", { class: "row-actions" });
       if (!item.pago) {
         tdAction.appendChild(el("button", { class: "btn-secondary", onclick: item.onPagar }, "Marcar como pago"));
       }
       const menuItens = [];
+      if ((item.pago || item.parcial) && item.onVer) menuItens.push({ label: "Ver pagamento", onClick: item.onVer });
       if (item.onEditar) menuItens.push({ label: "Editar", onClick: item.onEditar });
       if (item.onExcluir) menuItens.push({ label: "Excluir", danger: true, onClick: item.onExcluir });
       // Sem menu (ex.: faturas), guarda o mesmo espaço dos ⋮ para o "Marcar como pago" ficar alinhado.
@@ -5569,11 +5719,7 @@ function abrirPagarDespesaRapido(lancamento, contas) {
       <div class="form-grid">
         ${htmlValorPagamento(lancamento, "dp_valor")}
         <div class="field"><label>Data do pagamento</label><input id="dp_data" type="date" value="${valorJaPago(lancamento) > 0.005 ? todayISO() : (lancamento.data || todayISO())}"></div>
-        <div class="field full">
-          <label>Observação — de qual conta você pagou?</label>
-          <input id="dp_pagoDe" type="text" maxlength="200" placeholder="Ex.: Nubank, conta da empresa, dinheiro..." value="${escaparTexto(lancamento.pagoDe || "")}">
-          <p class="section-note" style="margin-top:4px;">Anotação livre, só pra você lembrar de onde saiu o pagamento. Não altera nenhuma conta do app.</p>
-        </div>
+        ${campoContaPagamentoHtml("dp_pagoDe", lancamento.pagoDe || "")}
       </div>`,
     actions: [
       { label: "Cancelar", class: "btn-secondary", onClick: () => Modal.close() },
@@ -5589,7 +5735,8 @@ function abrirPagarDespesaRapido(lancamento, contas) {
           const contaId = (lancamento.contaId && contas.some(c => c.id === lancamento.contaId))
             ? lancamento.contaId
             : (contas[0] ? contas[0].id : (lancamento.contaId || null));
-          const pagoDe = document.getElementById("dp_pagoDe").value.trim();
+          const pagoDe = await lerContaPagamento("dp_pagoDe");
+          if (!pagoDe) return;
           // Quitou: fica "Pago" (a data passa a ser a do pagamento, como antes).
           // Parcial: fica "Parcialmente pago", guarda quanto já foi pago e mantém a data de vencimento.
           const atualizado = pg.quita
@@ -5597,8 +5744,8 @@ function abrirPagarDespesaRapido(lancamento, contas) {
             : { ...lancamento, status: "Parcialmente pago", contaId, valorPago: pg.novoTotalPago, dataPagamento: data };
           // Só mexe no campo quando há o que gravar (ou o que limpar), assim o
           // pagamento comum continua funcionando mesmo antes do SQL de atualização.
-          if (pagoDe) atualizado.pagoDe = pagoDe;
-          else if (lancamento.pagoDe) atualizado.pagoDe = null;
+          atualizado.pagoDe = pagoDe;
+          atualizado.pagamentos = [...historicoPagamentos(lancamento), { data, valor: pg.v, pagoDe }];
           try {
             await DB.put("lancamentos", atualizado);
           } catch (err) {
@@ -5644,11 +5791,7 @@ function abrirPagarContaPagar(item, contas) {
         ${htmlValorPagamento(item, "cp_valor")}
         <div class="field"><label>Data do pagamento</label><input id="cp_data" type="date" value="${todayISO()}"></div>
         <div class="field"><label>Forma de pagamento</label><select id="cp_forma">${FORMAS_PAGAMENTO.map(f=>`<option>${f}</option>`).join("")}</select></div>
-        <div class="field full">
-          <label>Observação — de qual conta você pagou?</label>
-          <input id="cp_pagoDe" type="text" maxlength="200" placeholder="Ex.: Nubank, conta da empresa, dinheiro..." value="${escaparTexto(item.pagoDe || "")}">
-          <p class="section-note" style="margin-top:4px;">Anotação livre, só pra você lembrar de onde saiu o pagamento. Não altera nenhuma conta do app.</p>
-        </div>
+        ${campoContaPagamentoHtml("cp_pagoDe", item.pagoDe || "")}
       </div>`,
     actions: [
       { label: "Cancelar", class: "btn-secondary", onClick: () => Modal.close() },
@@ -5659,7 +5802,8 @@ function abrirPagarContaPagar(item, contas) {
           if (!pg) return;
           const data = document.getElementById("cp_data").value || todayISO();
           const forma = document.getElementById("cp_forma").value;
-          const pagoDe = document.getElementById("cp_pagoDe").value.trim();
+          const pagoDe = await lerContaPagamento("cp_pagoDe");
+          if (!pagoDe) return;
           // Sem escolha de conta: mantém a que o item já tinha, ou a primeira cadastrada.
           const contaId = (item.contaId && contas.some(c => c.id === item.contaId))
             ? item.contaId
@@ -5669,8 +5813,9 @@ function abrirPagarContaPagar(item, contas) {
             : { ...item, status: "Parcialmente pago", dataPagamento: data, formaPagamento: forma, contaId, valorPago: pg.novoTotalPago };
           // O dinheiro que saiu agora vira um lançamento pago (o valor desta parcela, não o total).
           const novoLanc = { tipo: "despesa", data, descricao: pg.quita ? item.descricao : `${item.descricao} (pagamento parcial)`, categoriaId: item.categoriaId, valor: pg.v, formaPagamento: forma, contaId, status: "Pago", recorrente: false, obs: "Pagamento de conta a pagar" };
-          if (pagoDe) { atualizadoCp.pagoDe = pagoDe; novoLanc.pagoDe = pagoDe; }
-          else if (item.pagoDe) atualizadoCp.pagoDe = null;
+          atualizadoCp.pagoDe = pagoDe; novoLanc.pagoDe = pagoDe;
+          atualizadoCp.pagamentos = [...historicoPagamentos(item), { data, valor: pg.v, pagoDe }];
+          novoLanc.pagamentos = [{ data, valor: pg.v, pagoDe }];
           try {
             await DB.put("contasPagar", atualizadoCp);
             await DB.put("lancamentos", novoLanc);
@@ -5702,6 +5847,142 @@ function excluirContaPagar(item) {
       App.refresh();
     }
   });
+}
+
+/* ---------- Pagamentos por conta (conferência) ----------
+   Junta todos os pagamentos de despesas (inclusive os de contas a pagar, que viram despesa paga)
+   e de faturas, agrupados pela conta de pagamento indicada. Só para conferência. */
+let _pcIni = null, _pcFim = null, _pcConta = "";
+async function coletarPagamentosPorConta() {
+  const lancamentos = await DB.getAll("lancamentos");
+  const faturaPag = await DB.getAll("faturaPagamentos");
+  const cartoes = await DB.getAll("cartoes");
+  const out = [];
+  lancamentos.filter(l => l.tipo === "despesa" && !l.isTransferencia).forEach(l => {
+    historicoPagamentos(l).forEach(h => out.push({ data: h.data || l.data, valor: Number(h.valor) || 0, conta: (h.pagoDe || "").trim(), descricao: l.descricao, tipo: "Despesa", abrir: () => abrirVerPagamento("lanc", l) }));
+  });
+  faturaPag.forEach(p => {
+    const cartao = cartoes.find(c => c.id === p.cartaoId);
+    const fat = { cartaoId: p.cartaoId, mesReferencia: p.mesReferencia, cartao, total: 0 };
+    out.push({ data: p.data, valor: Number(p.valorPago) || 0, conta: (p.pagoDe || "").trim(), descricao: `Fatura ${cartao ? cartao.nome : ""} (${mesRefLabel(p.mesReferencia)})`, tipo: "Fatura", abrir: () => abrirVerPagamento("fatura", fat) });
+  });
+  return out;
+}
+
+async function renderPagamentosContaView(container) {
+  if (_pcIni === null) { _pcIni = currentMesRef(); _pcFim = _pcIni; }
+  container.appendChild(el("span", { class: "module-badge" }, "Pagamentos por conta"));
+
+  // --- cadastro das contas de pagamento ---
+  const painelCad = el("div", { class: "panel" });
+  painelCad.appendChild(el("div", { class: "panel-header" }, [el("h2", {}, "Contas de pagamento")]));
+  painelCad.appendChild(el("p", { class: "section-note", style: "margin-top:-4px;" }, "São as contas que aparecem em \"De qual conta você pagou?\". Servem só para conferir quanto saiu de cada uma: não mexem no saldo das contas bancárias."));
+  const chips = el("div", { style: "display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;" });
+  painelCad.appendChild(chips);
+  const linhaAdd = el("div", { class: "filtro-linha", style: "display:flex; gap:8px; flex-wrap:wrap; align-items:center;" });
+  const inNova = el("input", { type: "text", maxlength: "80", placeholder: "Nome da nova conta (ex.: Nubank, Itaú PJ)", style: "min-width:260px;" });
+  const btnAdd = el("button", { class: "btn-accent" }, "+ Adicionar conta");
+  linhaAdd.appendChild(inNova); linhaAdd.appendChild(btnAdd);
+  painelCad.appendChild(linhaAdd);
+  container.appendChild(painelCad);
+
+  // --- conferência ---
+  const panel = el("div", { class: "panel" });
+  panel.appendChild(el("div", { class: "panel-header" }, [el("h2", {}, "Quanto saiu de cada conta")]));
+  const filtros = el("div", { class: "filtro-linha", style: "display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;" });
+  const periodo = criarCamposPeriodo(filtros, { ini: _pcIni, fim: _pcFim, aoMudar: (a, b) => { _pcIni = a; _pcFim = b; refresh(); } });
+  filtros.appendChild(el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;", onclick: () => periodo.definir("", "") }, "Ver todos os meses"));
+  filtros.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0 0 0 8px;" }, "Conta:"));
+  const selConta = el("select");
+  filtros.appendChild(selConta);
+  panel.appendChild(filtros);
+  const cardsWrap = el("div", { style: "margin-bottom:16px;" });
+  panel.appendChild(cardsWrap);
+  const wrap = el("div", { class: "table-wrap" });
+  const table = el("table", { class: "data-table" });
+  table.innerHTML = `<thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Conta</th><th class="num">Valor</th></tr></thead>`;
+  const tbody = el("tbody");
+  table.appendChild(tbody); wrap.appendChild(table); panel.appendChild(wrap);
+  container.appendChild(panel);
+
+  let todos = [];
+  function desenharChips() {
+    chips.innerHTML = "";
+    const lista = listaContasPagamento();
+    if (!lista.length) chips.appendChild(el("span", { class: "section-note", style: "margin:0;" }, "Nenhuma conta cadastrada ainda. Cadastre aqui ou direto na hora de pagar."));
+    lista.forEach(n => chips.appendChild(el("span", { class: "tag-pill", style: "font-size:12.5px; padding:5px 6px 5px 12px;" }, [
+      n, el("button", { class: "btn-icon", style: "width:22px; height:22px; margin-left:6px; font-size:13px;", title: "Remover da lista", onclick: () => removerConta(n) }, "×")
+    ])));
+  }
+  function preencherSelect() {
+    const nomes = new Set(listaContasPagamento());
+    todos.forEach(p => { if (p.conta) nomes.add(p.conta); });
+    selConta.innerHTML = `<option value="">Todas as contas</option>` +
+      [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR")).map(n => `<option value="${escaparTexto(n)}">${escaparTexto(n)}</option>`).join("") +
+      `<option value="__sem__">Sem conta indicada</option>`;
+    selConta.value = _pcConta;
+    if (selConta.value !== _pcConta) { _pcConta = ""; selConta.value = ""; }
+  }
+  function removerConta(n) {
+    Modal.confirm({
+      title: "Remover conta de pagamento",
+      message: `Tirar <strong>${escaparTexto(n)}</strong> da lista? Os pagamentos já feitos com ela continuam registrados e aparecem aqui.`,
+      confirmLabel: "Remover",
+      onConfirm: async () => { await salvarConfig({ contasPagamento: listaContasPagamento().filter(x => x !== n) }); desenharChips(); preencherSelect(); }
+    });
+  }
+  btnAdd.addEventListener("click", async () => {
+    const nome = inNova.value.trim();
+    if (!nome) return showToast("Digite o nome da conta", "error");
+    if (listaContasPagamento().some(x => x.toLowerCase() === nome.toLowerCase())) return showToast("Essa conta já está na lista", "error");
+    await salvarConfig({ contasPagamento: [...listaContasPagamento(), nome] });
+    inNova.value = "";
+    desenharChips(); preencherSelect();
+    showToast("Conta de pagamento cadastrada", "success");
+  });
+  selConta.addEventListener("change", () => { _pcConta = selConta.value; refresh(false); });
+
+  async function refresh(recarregar = true) {
+    if (recarregar) { todos = await coletarPagamentosPorConta(); preencherSelect(); }
+    const per = normalizarPeriodo(_pcIni, _pcFim);
+    const noPeriodo = (d) => !per.ini || (!!d && d.slice(0, 7) >= per.ini && d.slice(0, 7) <= per.fim);
+    const doPeriodo = todos.filter(p => noPeriodo(p.data));
+    // Cartões com o total de cada conta (clique para filtrar)
+    const porConta = {};
+    doPeriodo.forEach(p => { const k = p.conta || "__sem__"; porConta[k] = porConta[k] || { total: 0, qtd: 0 }; porConta[k].total += p.valor; porConta[k].qtd++; });
+    cardsWrap.innerHTML = "";
+    const grid = el("div", { class: "grid-cards" });
+    Object.entries(porConta).sort((a, b) => b[1].total - a[1].total).forEach(([k, v]) => {
+      const card = kpiCard(k === "__sem__" ? "Sem conta indicada" : k, fmtMoney(v.total), `${v.qtd} pagamento(s) · ${rotuloPeriodo(per.ini, per.fim)}`, k === "__sem__" ? "warn" : "", () => { _pcConta = _pcConta === k ? "" : k; selConta.value = _pcConta; refresh(false); });
+      if (_pcConta === k) card.style.outline = "2px solid var(--accent)";
+      grid.appendChild(card);
+    });
+    if (!Object.keys(porConta).length) cardsWrap.appendChild(el("p", { class: "section-note" }, "Nenhum pagamento no período."));
+    else cardsWrap.appendChild(grid);
+    // Tabela
+    const lista = doPeriodo.filter(p => !_pcConta || (_pcConta === "__sem__" ? !p.conta : p.conta === _pcConta))
+      .sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+    tbody.innerHTML = "";
+    if (!lista.length) {
+      tbody.appendChild(el("tr", { class: "empty-row" }, el("td", { colspan: "5" }, "Nenhum pagamento encontrado.")));
+      return;
+    }
+    lista.forEach(p => {
+      const tr = el("tr", { style: "cursor:pointer;", title: "Clique para ver o pagamento", onclick: p.abrir });
+      tr.dataset.valor = String(p.valor);
+      tr.innerHTML = `<td>${p.data ? fmtDate(p.data) : "—"}</td><td>${escaparTexto(p.descricao || "")}</td>
+        <td><span class="badge gray">${p.tipo}</span></td>
+        <td>${p.conta ? `<strong>${escaparTexto(p.conta)}</strong>` : `<span class="badge amber">Sem conta indicada</span>`}</td>
+        <td class="num money">${fmtMoney(p.valor)}</td>`;
+      tbody.appendChild(tr);
+    });
+    const total = lista.reduce((s, p) => s + p.valor, 0);
+    const trT = el("tr", { style: "font-weight:800; background:var(--navy-light);" });
+    trT.innerHTML = `<td colspan="4">TOTAL (${lista.length} pagamento(s))</td><td class="num money">${fmtMoney(total)}</td>`;
+    tbody.appendChild(trT);
+  }
+  desenharChips();
+  await refresh();
 }
 
 async function renderContasReceberView(container) {
@@ -9224,6 +9505,7 @@ const VIEW_TITLES = {
   contasBancarias: "Contas Bancárias",
   categorias: "Categorias",
   contasPagar: "Contas a Pagar",
+  pagamentosConta: "Pagamentos por conta",
   contasReceber: "Contas a Receber",
   relatorios: "Relatórios",
   combustivel: "Combustível",
@@ -9237,7 +9519,7 @@ const VIEW_TITLES = {
 const VIEW_ICONS = {
   dashboard: "◻", lancamentos: "✚", receitas: "↗", despesas: "↘",
   cartoes: "▤", faturas: "▦", importacao: "⇩", contasBancarias: "▥", categorias: "≡",
-  contasPagar: "⏳", contasReceber: "◈", combustivel: "⛽", notas: "📝",
+  contasPagar: "⏳", pagamentosConta: "🧾", contasReceber: "◈", combustivel: "⛽", notas: "📝",
   relatorios: "▥", configuracoes: "⚙", seguranca: "🛡", calculadora: "🧮", ajuda: "❓"
 };
 
@@ -9252,6 +9534,7 @@ const VIEW_RENDERERS = {
   contasBancarias: renderContasView,
   categorias: renderCategoriasView,
   contasPagar: renderContasPagarView,
+  pagamentosConta: renderPagamentosContaView,
   contasReceber: renderContasReceberView,
   relatorios: renderRelatoriosView,
   combustivel: renderCombustivelView,
