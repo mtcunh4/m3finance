@@ -1658,12 +1658,15 @@ function valorRestante(item) {
    Não mexem no saldo das contas bancárias. */
 function listaContasPagamento() {
   const l = Array.isArray(APP_CONFIG.contasPagamento) ? APP_CONFIG.contasPagamento : [];
-  return l.filter(x => typeof x === "string" && x.trim()).map(x => x.trim());
+  // Sempre em ordem alfabética (sem diferenciar maiúsculas e acentos)
+  return l.filter(x => typeof x === "string" && x.trim()).map(x => x.trim())
+    .sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
 }
 function campoContaPagamentoHtml(id, atual, extraClasse = "") {
   const lista = listaContasPagamento();
   const opcoes = [...lista];
-  if (atual && !opcoes.some(n => n === atual)) opcoes.unshift(atual); // anotação antiga, de antes da lista
+  if (atual && !opcoes.some(n => n === atual)) opcoes.push(atual); // anotação antiga, de antes da lista
+  opcoes.sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
   return `<div class="field full ${extraClasse}">
       <label>De qual conta você pagou? <span style="color:var(--red);">*</span></label>
       <select id="${id}" onchange="document.getElementById('${id}_novaWrap').style.display = this.value === '__nova__' ? '' : 'none'">
@@ -2022,9 +2025,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "5.14";
+const APP_VERSION = "5.15";
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas de pagamento: escolha obrigatória ao pagar, tela Pagamentos por conta e Ver pagamento";
+const APP_VERSION_DESC = "Contas de pagamento em ordem alfabética";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5918,7 +5921,7 @@ async function renderPagamentosContaView(container) {
     const nomes = new Set(listaContasPagamento());
     todos.forEach(p => { if (p.conta) nomes.add(p.conta); });
     selConta.innerHTML = `<option value="">Todas as contas</option>` +
-      [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR")).map(n => `<option value="${escaparTexto(n)}">${escaparTexto(n)}</option>`).join("") +
+      [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })).map(n => `<option value="${escaparTexto(n)}">${escaparTexto(n)}</option>`).join("") +
       `<option value="__sem__">Sem conta indicada</option>`;
     selConta.value = _pcConta;
     if (selConta.value !== _pcConta) { _pcConta = ""; selConta.value = ""; }
