@@ -423,6 +423,7 @@ table.data-table tbody tr.row-avencer td:first-child{box-shadow: inset 3px 0 0 v
 
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
 .seletor-mes{display:inline-flex; gap:4px; align-items:center;}
+.btn-hoje{font-size:12px !important; padding:6px 12px !important; font-weight:700 !important; text-transform:uppercase; letter-spacing:.04em;}
 .seletor-mes select{min-width:0;}
 /* Na tabela, a célula de ações continua sendo célula (com flex ela saía da linha:
    borda e botões desalinhados nas linhas mais altas). Os botões ficam centralizados. */
@@ -2038,9 +2039,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.1"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.2"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Filtros de período com listas de mês e ano (fácil trocar o ano)";
+const APP_VERSION_DESC = "Botão HOJE nos filtros de período: volta para o mês atual";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5525,6 +5526,8 @@ async function renderContasPagarView(container) {
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "até:"));
   const inputMesFim = criarSeletorMes(_cpMesFimFiltro, "Mês final");
   filtroWrap.appendChild(inputMesFim);
+  filtroWrap.appendChild(el("button", { class: "btn-secondary btn-hoje", type: "button", title: "Ir para o mês atual",
+    onclick: () => { const m = currentMesRef(); _cpMesFiltro = m; _cpMesFimFiltro = m; inputMes.value = m; inputMesFim.value = m; refresh(); } }, "Hoje"));
   const btnTodos = el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;" }, "Ver todos os meses");
   filtroWrap.appendChild(btnTodos);
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0 0 0 8px;" }, "Status:"));
@@ -7055,6 +7058,9 @@ function criarCamposPeriodo(container, { ini, fim, aoMudar }) {
   const inFim = criarSeletorMes(fim || "", "Mês final");
   container.appendChild(rot("De:")); container.appendChild(inIni);
   container.appendChild(rot("até:")); container.appendChild(inFim);
+  // "Hoje": volta para o mês atual
+  container.appendChild(el("button", { class: "btn-secondary btn-hoje", type: "button", title: "Ir para o mês atual",
+    onclick: () => { const m = currentMesRef(); inIni.value = m; inFim.value = m; aoMudar(m, m); } }, "Hoje"));
   inIni.addEventListener("change", () => {
     if (!inFim.value || (inIni.value && inFim.value < inIni.value)) inFim.value = inIni.value;
     aoMudar(inIni.value, inFim.value);
