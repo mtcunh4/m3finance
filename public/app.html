@@ -422,6 +422,8 @@ table.data-table tbody tr.row-avencer td:first-child{box-shadow: inset 3px 0 0 v
 .badge.blue{background:var(--blue-bg); color:var(--blue-ink);}
 
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
+.seletor-mes{display:inline-flex; gap:4px; align-items:center;}
+.seletor-mes select{min-width:0;}
 /* Na tabela, a célula de ações continua sendo célula (com flex ela saía da linha:
    borda e botões desalinhados nas linhas mais altas). Os botões ficam centralizados. */
 td.row-actions{display:table-cell; text-align:right; white-space:nowrap; vertical-align:middle;}
@@ -2036,9 +2038,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.0"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.1"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: itens a vencer em lilás (faixa, fundo e etiqueta)";
+const APP_VERSION_DESC = "Filtros de período com listas de mês e ano (fácil trocar o ano)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5518,10 +5520,10 @@ async function renderContasPagarView(container) {
   const filtroWrap = el("div", { class: "filtro-linha", style: "display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;" });
   // Período: de um mês até outro (ex.: janeiro a março). Para um mês só, deixe os dois iguais.
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "De:"));
-  const inputMes = el("input", { type: "month", value: _cpMesFiltro, title: "Mês inicial" });
+  const inputMes = criarSeletorMes(_cpMesFiltro, "Mês inicial");
   filtroWrap.appendChild(inputMes);
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, "até:"));
-  const inputMesFim = el("input", { type: "month", value: _cpMesFimFiltro, title: "Mês final" });
+  const inputMesFim = criarSeletorMes(_cpMesFimFiltro, "Mês final");
   filtroWrap.appendChild(inputMesFim);
   const btnTodos = el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;" }, "Ver todos os meses");
   filtroWrap.appendChild(btnTodos);
@@ -7012,10 +7014,45 @@ function rotuloPeriodo(ini, fim) {
   if (!ini) return "Todos os meses";
   return ini === fim ? mesRefLabel(ini) : `${mesRefLabel(ini)} a ${mesRefLabel(fim)}`;
 }
+// Escolha de mês com duas listas (mês e ano), no lugar do campo de mês do navegador,
+// em que era difícil trocar o ano. Funciona como um campo: .value = "AAAA-MM" (ou "")
+// e avisa com o evento "change".
+function criarSeletorMes(valor, titulo) {
+  const anoAtual = new Date().getFullYear();
+  const wrap = el("span", { class: "seletor-mes", title: titulo || "" });
+  const selMes = el("select", { "aria-label": (titulo || "Mês") + " — mês" });
+  const selAno = el("select", { "aria-label": (titulo || "Mês") + " — ano" });
+  selMes.innerHTML = `<option value="">Mês</option>` + MESES_PT.map((m, i) => `<option value="${String(i + 1).padStart(2, "0")}">${m}</option>`).join("");
+  const preencherAnos = (extra) => {
+    const anos = new Set();
+    for (let a = anoAtual - 6; a <= anoAtual + 4; a++) anos.add(a);
+    if (extra) anos.add(Number(extra));
+    selAno.innerHTML = `<option value="">Ano</option>` + [...anos].sort((a, b) => a - b).map(a => `<option value="${a}">${a}</option>`).join("");
+  };
+  const definir = (v) => {
+    const [a, m] = (v || "").split("-");
+    preencherAnos(a);
+    selAno.value = a || ""; selMes.value = m || "";
+  };
+  definir(valor);
+  Object.defineProperty(wrap, "value", {
+    get: () => (selAno.value && selMes.value) ? `${selAno.value}-${selMes.value}` : "",
+    set: (v) => definir(v)
+  });
+  const avisar = () => wrap.dispatchEvent(new Event("change"));
+  selMes.addEventListener("change", () => { if (selMes.value && !selAno.value) selAno.value = String(anoAtual); avisar(); });
+  selAno.addEventListener("change", () => {
+    if (selAno.value && !selMes.value) selMes.value = String(new Date().getMonth() + 1).padStart(2, "0");
+    avisar();
+  });
+  wrap.appendChild(selMes); wrap.appendChild(selAno);
+  return wrap;
+}
+
 function criarCamposPeriodo(container, { ini, fim, aoMudar }) {
   const rot = (t) => el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0;" }, t);
-  const inIni = el("input", { type: "month", value: ini || "", title: "Mês inicial" });
-  const inFim = el("input", { type: "month", value: fim || "", title: "Mês final" });
+  const inIni = criarSeletorMes(ini || "", "Mês inicial");
+  const inFim = criarSeletorMes(fim || "", "Mês final");
   container.appendChild(rot("De:")); container.appendChild(inIni);
   container.appendChild(rot("até:")); container.appendChild(inFim);
   inIni.addEventListener("change", () => {
