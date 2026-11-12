@@ -428,6 +428,7 @@ table.data-table tbody tr.row-avencer td:first-child{box-shadow: inset 3px 0 0 v
 
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
 .seletor-mes{display:inline-flex; gap:4px; align-items:center;}
+.status-rapido{font-size:12.5px; padding:5px 8px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer;}
 .btn-hoje{font-size:12.5px !important; padding:7px 16px !important; font-weight:800 !important; text-transform:uppercase; letter-spacing:.08em;
   color:var(--amber) !important;} /* fundo normal do botão; só a escrita em amarelo (no claro, um amarelo mais escuro para dar leitura) */
 .seletor-mes select{min-width:0;}
@@ -2045,9 +2046,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.4"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.5"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Despesas a vencer em lilás; Dashboard reorganizado em Previsto, Já aconteceu e Falta acontecer";
+const APP_VERSION_DESC = "Dashboard: alterar o status das receitas direto na lista dos totais";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -2571,13 +2572,45 @@ function abrirDrillDownLancamentos(titulo, itens, categorias) {
       ordenados.forEach(l => {
         const cat = categorias.find(c => c.id === l.categoriaId);
         const tr = el("tr");
+        const ehReceita = l.tipo === "receita" && !l.cartaoTag;
         tr.innerHTML = `
           <td>${fmtDate(l.data || `${l.mesReferencia}-01`)}</td>
           <td>${l.descricao}${l.cartaoTag ? ' <span class="badge gray" style="margin-left:4px;">cartão</span>' : ""}</td>
           <td>${cat ? cat.nome : "—"}</td>
-          <td class="num money neg">${fmtMoney(l.valor)}</td>
-          <td>${l.status || (l.cartaoTag ? "Fatura" : "—")}</td>
+          <td class="num money ${ehReceita ? "info" : "neg"}">${fmtMoney(l.valor)}</td>
+          <td></td>
         `;
+        const tdStatus = tr.children[4];
+        if (ehReceita && l.id && !l.isTransferencia) {
+          // Receita: dá para trocar o status aqui mesmo (Recebido / Pendente)
+          const sel = el("select", { class: "status-rapido", title: "Clique para alterar o status" }, [
+            el("option", { value: "Recebido" }, "Recebido"),
+            el("option", { value: "Pendente" }, "Pendente")
+          ]);
+          sel.value = l.status === "Recebido" ? "Recebido" : "Pendente";
+          sel.addEventListener("change", async () => {
+            const novo = sel.value;
+            const atualizado = { ...l, status: novo, dataRecebimento: novo === "Recebido" ? (l.dataRecebimento || l.data || todayISO()) : null };
+            sel.disabled = true;
+            try {
+              await DB.put("lancamentos", atualizado);
+              Object.assign(l, atualizado);
+              await logAction("editar", "receita", `Status de "${l.descricao}" alterado para ${novo}`);
+              showToast(`"${l.descricao}" marcada como ${novo}`, "success");
+              App.refresh(); // atualiza os números do Dashboard por trás da janela
+            } catch (e) {
+              sel.value = l.status === "Recebido" ? "Recebido" : "Pendente";
+              showToast("Não foi possível alterar o status. Tente de novo.", "error");
+            } finally { sel.disabled = false; }
+          });
+          tdStatus.appendChild(sel);
+        } else if (l.tipo === "despesa" && !l.cartaoTag && l.id && !l.isTransferencia && l.status !== "Pago") {
+          // Despesa em aberto: mostra o status e um atalho para pagar (pede a conta de pagamento)
+          tdStatus.appendChild(el("span", { class: "badge " + (l.status === "Parcialmente pago" ? "blue" : "lilas"), style: "margin-right:6px;" }, l.status === "Parcialmente pago" ? "Pago parcial" : "Em aberto"));
+          tdStatus.appendChild(el("button", { class: "btn-secondary", style: "font-size:12px; padding:4px 10px;", onclick: async () => { Modal.close(); abrirPagarDespesaRapido(l, await DB.getAll("contas")); } }, "Pagar"));
+        } else {
+          tdStatus.textContent = l.status || (l.cartaoTag ? "Fatura" : "—");
+        }
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
