@@ -2025,9 +2025,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "6.7"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "6.8"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: ordenar por valor ou vencimento, mantendo vencidas, a vencer e pagas";
+const APP_VERSION_DESC = "Contas a Pagar: filtro Vencidos e a vencer (tudo que falta pagar)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5486,7 +5486,7 @@ function excluirCategoria(cat) {
 
 let _cpMesFiltro = null; // início do período "YYYY-MM" ou "" pra todos os meses
 let _cpMesFimFiltro = null; // fim do período "YYYY-MM" (vazio = só o mês de início)
-let _cpStatusFiltro = ""; // "" | "vencido" | "aberto" | "pago"
+let _cpStatusFiltro = ""; // "" | "naopago" | "vencido" | "aberto" | "pago"
 let _cpOrdem = "venc_asc"; // venc_asc | venc_desc | valor_asc | valor_desc
 
 async function renderContasPagarView(container) {
@@ -5517,6 +5517,7 @@ async function renderContasPagarView(container) {
   filtroWrap.appendChild(el("label", { style: "font-size:12.5px; color:var(--text-muted); margin:0 0 0 8px;" }, "Status:"));
   const selStatus = el("select", {}, [
     el("option", { value: "" }, "Todos"),
+    el("option", { value: "naopago" }, "Vencidos e a vencer (falta pagar)"),
     el("option", { value: "vencido" }, "Só vencidos (em atraso)"),
     el("option", { value: "aberto" }, "Só em aberto (a vencer)"),
     el("option", { value: "pago" }, "Só pagos")
@@ -5644,6 +5645,7 @@ async function renderContasPagarView(container) {
     itensConsolidados.sort((a, b) => (grupoOrdem(a) - grupoOrdem(b)) || criterio(a, b));
     let itensExibidos = itensConsolidados;
     if (_cpStatusFiltro === "pago") itensExibidos = itensExibidos.filter(i => i.pago);
+    else if (_cpStatusFiltro === "naopago") itensExibidos = itensExibidos.filter(i => grupoOrdem(i) !== 2); // vencidos + a vencer
     else if (_cpStatusFiltro === "vencido") itensExibidos = itensExibidos.filter(i => grupoOrdem(i) === 0);
     else if (_cpStatusFiltro === "aberto") itensExibidos = itensExibidos.filter(i => grupoOrdem(i) === 1);
 
