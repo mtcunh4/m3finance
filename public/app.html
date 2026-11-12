@@ -2046,9 +2046,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.5"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.6"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Dashboard: alterar o status das receitas direto na lista dos totais";
+const APP_VERSION_DESC = "Lançamentos: despesas a vencer em lilás, igual a Despesas e Contas a Pagar";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4761,8 +4761,8 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
 
     todos.forEach(l => {
       const cat = categorias.find(c => c.id === l.categoriaId);
-      // Tela de Despesas: a vencer (não paga e ainda no prazo) em lilás, igual a Contas a Pagar.
-      const despesaAVencer = soDespesas && l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !despesaVencida(l);
+      // Despesas e Lançamentos: despesa a vencer (não paga e ainda no prazo) em lilás, igual a Contas a Pagar.
+      const despesaAVencer = l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !despesaVencida(l);
       const tr = el("tr", { class: despesaVencida(l) ? "row-overdue" : (despesaAVencer ? "row-avencer" : "") });
       tr.dataset.valor = String(Math.abs(l.valor));
       tr.dataset.id = l.id;
