@@ -305,6 +305,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 
 /* ===== CARDS / GRID ===== */
 .grid-cards{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:22px;}
+.grid-cards.g3{grid-template-columns:repeat(3,1fr); margin-bottom:14px;}
+@media(max-width:900px){.grid-cards.g3{grid-template-columns:1fr;}}
+.kpi-secao{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:4px 2px 8px;}
+.kpi-secao strong{font-size:12.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--heading);}
+.kpi-secao span{font-size:12px; color:var(--text-muted);}
 @media(max-width:1200px){.grid-cards{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:640px){.grid-cards{grid-template-columns:1fr;}}
 
@@ -2040,9 +2045,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.3"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.4"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: pagamento de conta a pagar não conta mais em dobro em Despesas previstas e Já pago";
+const APP_VERSION_DESC = "Despesas a vencer em lilás; Dashboard reorganizado em Previsto, Já aconteceu e Falta acontecer";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -2498,25 +2503,44 @@ async function renderDashboardView(container) {
       }
     }
 
-    const saldoPrevisto = receitaPrevista - despesaPrevista - totalFaturas;
+    const saldoPrevisto = receitaPrevista - despesaPrevista - totalFaturas; // receitas previstas − (avulsas + faturas)
 
     const mesRefAtual = per.fim; // parcelas futuras = depois do fim do período
     const parcelasFuturas = parcelas.filter(p => compareMesRef(p.mesReferencia, mesRefAtual) > 0 && (!cartaoFiltro || p.cartaoId === cartaoFiltro)).reduce((s,p)=>s+p.valor,0);
 
     kpiWrap.innerHTML = "";
-    const grid = el("div", { class: "grid-cards" });
+    // Três blocos: o que está previsto, o que já aconteceu e o que ainda falta.
     const despesaPrevistaTotal = despesaPrevista + totalFaturas;
-    grid.appendChild(kpiCard("Receita do período", fmtMoney(receitaRecebida), `Previsto: ${fmtMoney(receitaPrevista)}`, "info", () => abrirDrillDownLancamentos("Receitas do período", receitasFiltradas, categorias)));
-    grid.appendChild(kpiCard("Despesas do período", fmtMoney(despesaPaga), `Previsto: ${fmtMoney(despesaPrevista)}`, "neg", () => abrirDrillDownLancamentos("Despesas do período (avulsas)", despesasFiltradas, categorias)));
-    grid.appendChild(kpiCard("Total de faturas", fmtMoney(totalFaturas), "Cartões de crédito"));
-    grid.appendChild(kpiCard("Despesa prevista total", fmtMoney(despesaPrevistaTotal), "Despesas avulsas + faturas de cartão", "neg", () => abrirDrillDownLancamentos("Despesa Prevista Total (avulsas + cartão)", [...despesasFiltradas, ...parcelasParaDrillDown.map(p => ({ ...p, tipo: "despesa", cartaoTag: true }))], categorias)));
     const despesaAberta = despesasFiltradas.reduce((s,l)=>s+valorRestante(l),0);
-    grid.appendChild(kpiCard("Despesas em aberto", fmtMoney(despesaAberta), "", despesaAberta > 0 ? "neg" : ""));
-    grid.appendChild(kpiCard("Faturas em aberto", fmtMoney(faturasAbertas), "", faturasAbertas > 0 ? "neg" : ""));
-    if (cartaoFiltro) grid.appendChild(kpiCard(kpiSaldoLabel, fmtMoney(kpiSaldoValor), kpiSaldoSub, kpiSaldoValor >= 0 ? "info" : "neg"));
-    grid.appendChild(kpiCard("Saldo previsto", fmtMoney(saldoPrevisto), "Receitas previstas − despesas previstas − faturas", saldoPrevisto >= 0 ? "info" : "neg"));
-    grid.appendChild(kpiCard("Parcelas futuras", fmtMoney(parcelasFuturas), "A partir do próximo mês"));
-    kpiWrap.appendChild(grid);
+    const pagoTotal = despesaPaga + faturasPagas;
+    const aPagarTotal = despesaAberta + faturasAbertas;
+    const aReceber = Math.max(0, receitaPrevista - receitaRecebida);
+    const saldoRealizado = receitaRecebida - pagoTotal;
+    const rotPer = rotuloPeriodo(per.ini, per.fim);
+    const partes = (av, fat) => `Despesas avulsas ${fmtMoney(av)} + faturas ${fmtMoney(fat)}`;
+    const secao = (titulo, sub, cards) => {
+      kpiWrap.appendChild(el("div", { class: "kpi-secao" }, [el("strong", {}, titulo), el("span", {}, sub)]));
+      const g = el("div", { class: "grid-cards g3" });
+      cards.forEach(c => g.appendChild(c));
+      kpiWrap.appendChild(g);
+    };
+    secao("Previsto no período", `Tudo o que está lançado para ${rotPer}`, [
+      kpiCard("Receitas previstas", fmtMoney(receitaPrevista), "Recebidas e a receber", "info", () => abrirDrillDownLancamentos("Receitas do período", receitasFiltradas, categorias)),
+      kpiCard("Despesas previstas", fmtMoney(despesaPrevistaTotal), partes(despesaPrevista, totalFaturas), "neg", () => abrirDrillDownLancamentos("Despesas previstas (avulsas + cartão)", [...despesasFiltradas, ...parcelasParaDrillDown.map(p => ({ ...p, tipo: "despesa", cartaoTag: true }))], categorias)),
+      kpiCard("Saldo previsto", fmtMoney(saldoPrevisto), "Receitas previstas − despesas previstas", saldoPrevisto >= 0 ? "info" : "neg")
+    ]);
+    secao("Já aconteceu", "O que já foi recebido e já foi pago", [
+      kpiCard("Recebido", fmtMoney(receitaRecebida), "Receitas marcadas como recebidas", "info", () => abrirDrillDownLancamentos("Receitas recebidas", receitasFiltradas.filter(l => l.status === "Recebido"), categorias)),
+      kpiCard("Pago", fmtMoney(pagoTotal), partes(despesaPaga, faturasPagas), "pos"),
+      kpiCard("Saldo realizado", fmtMoney(saldoRealizado), "Recebido − pago", saldoRealizado >= 0 ? "info" : "neg")
+    ]);
+    const cardsFalta = [
+      kpiCard("A receber", fmtMoney(aReceber), "Receitas previstas ainda não recebidas", "info"),
+      kpiCard("A pagar", fmtMoney(aPagarTotal), partes(despesaAberta, faturasAbertas), aPagarTotal > 0 ? "warn" : ""),
+      kpiCard(`Parcelas de cartão depois de ${mesRefLabel(mesRefAtual)}`, fmtMoney(parcelasFuturas), "Compras parceladas no cartão que só caem nos meses seguintes ao período")
+    ];
+    if (cartaoFiltro) cardsFalta.push(kpiCard(kpiSaldoLabel, fmtMoney(kpiSaldoValor), kpiSaldoSub, kpiSaldoValor >= 0 ? "info" : "neg"));
+    secao("Falta acontecer", "O que ainda não foi recebido ou pago", cardsFalta);
 
     await renderCharts({ cartaoFiltro, anoSel, semCartao });
   }
@@ -4704,7 +4728,9 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
 
     todos.forEach(l => {
       const cat = categorias.find(c => c.id === l.categoriaId);
-      const tr = el("tr", { class: despesaVencida(l) ? "row-overdue" : "" });
+      // Tela de Despesas: a vencer (não paga e ainda no prazo) em lilás, igual a Contas a Pagar.
+      const despesaAVencer = soDespesas && l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !despesaVencida(l);
+      const tr = el("tr", { class: despesaVencida(l) ? "row-overdue" : (despesaAVencer ? "row-avencer" : "") });
       tr.dataset.valor = String(Math.abs(l.valor));
       tr.dataset.id = l.id;
       const dataLabel = l.data ? fmtDate(l.data) : mesRefLabel(l.mesReferencia);
@@ -4747,10 +4773,10 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
             refresh();
           }
         }));
-        wrapStatus.appendChild(el("span", { class: "badge " + statusBadge(statusTela) }, statusTela));
+        wrapStatus.appendChild(el("span", { class: "badge " + (despesaAVencer ? "lilas" : statusBadge(statusTela)) }, statusTela));
         tdStatus.appendChild(wrapStatus);
       } else {
-        tr.children[5].innerHTML = `<span class="badge ${statusBadge(statusTela)}" title="${l.dataPagamento ? 'Pago em ' + fmtDate(l.dataPagamento) : ''}">${statusTela}</span>`;
+        tr.children[5].innerHTML = `<span class="badge ${despesaAVencer ? "lilas" : statusBadge(statusTela)}" title="${l.dataPagamento ? 'Pago em ' + fmtDate(l.dataPagamento) : ''}">${statusTela}</span>`;
       }
       const tdAction = el("td", { class: "row-actions" });
       if (l.tipo === "compra_cartao") {
