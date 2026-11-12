@@ -416,6 +416,11 @@ table.data-table tbody tr.row-overdue td:first-child{box-shadow: inset 3px 0 0 v
 .badge.blue{background:var(--blue-bg); color:var(--blue-ink);}
 
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
+/* Na tabela, a célula de ações continua sendo célula (com flex ela saía da linha:
+   borda e botões desalinhados nas linhas mais altas). Os botões ficam centralizados. */
+td.row-actions{display:table-cell; text-align:right; white-space:nowrap; vertical-align:middle;}
+td.row-actions > *{vertical-align:middle;}
+td.row-actions > * + *{margin-left:6px;}
 
 /* ===== CARD LIST (cartões) ===== */
 .card-list{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
@@ -2025,9 +2030,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "6.8"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "6.9"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: filtro Vencidos e a vencer (tudo que falta pagar)";
+const APP_VERSION_DESC = "Tabelas: botões da última coluna alinhados em linhas com mais de uma linha de texto";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
