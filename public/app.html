@@ -31,6 +31,8 @@
   --th-ink: #0c4763;
   --row-overdue-bg: #fff6f5;
   --row-overdue-bar: #c0262d;
+  /* A vencer (Contas a Pagar): lilás */
+  --avencer-bar: #7c3aed; --avencer-bg: #faf7ff; --avencer-badge-bg: #ede9fe; --avencer-badge: #5b21b6;
   --radius: 14px;
   --radius-sm: 9px;
   --shadow: 0 1px 2px rgba(15,42,74,.04), 0 4px 16px rgba(15,42,74,.06);
@@ -67,6 +69,7 @@
   --th-ink: #a9d3e6;
   --row-overdue-bg: rgba(255,138,128,.06);
   --row-overdue-bar: #ff8a80;
+  --avencer-bar: #a78bfa; --avencer-bg: rgba(167,139,250,.06); --avencer-badge-bg: rgba(167,139,250,.18); --avencer-badge: #c4b5fd;
   /* Campos de data e listas do navegador também no tom escuro */
   color-scheme: dark;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.35);
@@ -350,6 +353,9 @@ table.data-table tbody td{padding:10px 12px; border-bottom:1px solid var(--borde
 table.data-table tbody tr:hover{background:#fafcff;}
 table.data-table tbody tr.row-overdue{background: var(--row-overdue-bg);}
 table.data-table tbody tr.row-overdue td:first-child{box-shadow: inset 3px 0 0 var(--row-overdue-bar);}
+table.data-table tbody tr.row-avencer{background: var(--avencer-bg);}
+table.data-table tbody tr.row-avencer td:first-child{box-shadow: inset 3px 0 0 var(--avencer-bar);}
+.badge.lilas{background:var(--avencer-badge-bg); color:var(--avencer-badge);}
 .empty-row td{text-align:center; padding:30px; color:var(--text-muted);}
 
 .money{font-variant-numeric: tabular-nums; color:var(--text); font-weight:600;}
@@ -2030,9 +2036,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "6.9"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.0"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Tabelas: botões da última coluna alinhados em linhas com mais de uma linha de texto";
+const APP_VERSION_DESC = "Contas a Pagar: itens a vencer em lilás (faixa, fundo e etiqueta)";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5669,7 +5675,9 @@ async function renderContasPagarView(container) {
       const infoParcial = item.parcial
         ? `<div style="font-size:12px;"><span style="color:var(--blue); font-weight:600;">Pago ${fmtMoney(item.jaPago)}</span> · <span style="color:var(--text); font-weight:600;">falta ${fmtMoney(item.restante)}</span></div>`
         : "";
-      const tr = el("tr", { class: vencida ? "row-overdue" : "" });
+      // Vencido: vermelho/amarelo · a vencer (em aberto ou pago parcial no prazo): lilás · pago: verde
+      const aVencer = !item.pago && !vencida;
+      const tr = el("tr", { class: vencida ? "row-overdue" : (aVencer ? "row-avencer" : "") });
       tr.dataset.valor = String(Math.abs(item.valor));
       tr.innerHTML = `
         <td><span class="badge gray">${item.tipo}</span></td>
@@ -5677,7 +5685,7 @@ async function renderContasPagarView(container) {
         <td>${item.categoriaCartao}</td>
         <td>${item.vencimento ? fmtDate(item.vencimento) : "—"}</td>
         <td class="num money ${vencida ? "neg" : "neutro"}">${fmtMoney(item.valor)}</td>
-        <td><span class="badge ${statusBadge(status)}">${status}</span></td>
+        <td><span class="badge ${aVencer ? "lilas" : statusBadge(status)}">${status}</span></td>
         <td style="font-size:12px; color:var(--text-muted);">${infoParcial || item.pagoInfo}</td>
       `;
       // Clicar no "Pago em / conta" abre o detalhe do pagamento (data, valor, conta e observação).
