@@ -2040,9 +2040,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.2"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.3"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Botão HOJE em destaque nos filtros de período; Dashboard sempre com despesas avulsas e filtro de tipo de despesa";
+const APP_VERSION_DESC = "Contas a Pagar: pagamento de conta a pagar não conta mais em dobro em Despesas previstas e Já pago";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5580,7 +5580,10 @@ async function renderContasPagarView(container) {
     const bateMesPorData = (dataISO) => !perIni || (!!dataISO && bateMes(dataISO.slice(0, 7)));
 
     const cpDoMes = todasContasPagar.filter(i => bateMesPorData(i.vencimento));
-    const despesasDoMes = todosLancamentos.filter(l => l.tipo === "despesa" && bateMes(mesEfetivoDoLancamento(l)));
+    // O pagamento de uma "Conta a Pagar" gera uma despesa paga (para o saldo da conta). Aqui ela não
+    // entra de novo: a própria conta a pagar já mostra o valor e quanto foi pago (senão contaria em dobro).
+    const ehPagamentoDeContaPagar = (l) => l.obs === "Pagamento de conta a pagar";
+    const despesasDoMes = todosLancamentos.filter(l => l.tipo === "despesa" && !ehPagamentoDeContaPagar(l) && bateMes(mesEfetivoDoLancamento(l)));
     const receitasDoMes = todosLancamentos.filter(l => l.tipo === "receita" && bateMes(mesEfetivoDoLancamento(l)) && l.status === "Recebido");
     const faturasDoMes = todasFaturas.filter(f => bateMesPorData(f.vencISO) && f.status !== "Crédito");
 
