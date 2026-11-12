@@ -2040,9 +2040,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.3"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.4"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Contas a Pagar: pagamento de conta a pagar não conta mais em dobro em Despesas previstas e Já pago";
+const APP_VERSION_DESC = "Despesas: itens a vencer em lilás, igual a Contas a Pagar";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4704,7 +4704,9 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
 
     todos.forEach(l => {
       const cat = categorias.find(c => c.id === l.categoriaId);
-      const tr = el("tr", { class: despesaVencida(l) ? "row-overdue" : "" });
+      // Tela de Despesas: a vencer (não paga e ainda no prazo) em lilás, igual a Contas a Pagar.
+      const despesaAVencer = soDespesas && l.tipo === "despesa" && !l.isTransferencia && l.status !== "Pago" && !despesaVencida(l);
+      const tr = el("tr", { class: despesaVencida(l) ? "row-overdue" : (despesaAVencer ? "row-avencer" : "") });
       tr.dataset.valor = String(Math.abs(l.valor));
       tr.dataset.id = l.id;
       const dataLabel = l.data ? fmtDate(l.data) : mesRefLabel(l.mesReferencia);
@@ -4747,10 +4749,10 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
             refresh();
           }
         }));
-        wrapStatus.appendChild(el("span", { class: "badge " + statusBadge(statusTela) }, statusTela));
+        wrapStatus.appendChild(el("span", { class: "badge " + (despesaAVencer ? "lilas" : statusBadge(statusTela)) }, statusTela));
         tdStatus.appendChild(wrapStatus);
       } else {
-        tr.children[5].innerHTML = `<span class="badge ${statusBadge(statusTela)}" title="${l.dataPagamento ? 'Pago em ' + fmtDate(l.dataPagamento) : ''}">${statusTela}</span>`;
+        tr.children[5].innerHTML = `<span class="badge ${despesaAVencer ? "lilas" : statusBadge(statusTela)}" title="${l.dataPagamento ? 'Pago em ' + fmtDate(l.dataPagamento) : ''}">${statusTela}</span>`;
       }
       const tdAction = el("td", { class: "row-actions" });
       if (l.tipo === "compra_cartao") {
