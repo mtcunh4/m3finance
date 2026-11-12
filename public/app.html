@@ -424,8 +424,7 @@ table.data-table tbody tr.row-avencer td:first-child{box-shadow: inset 3px 0 0 v
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
 .seletor-mes{display:inline-flex; gap:4px; align-items:center;}
 .btn-hoje{font-size:12.5px !important; padding:7px 16px !important; font-weight:800 !important; text-transform:uppercase; letter-spacing:.08em;
-  background:var(--accent) !important; color:#fff !important; border:1px solid var(--accent) !important; box-shadow:0 2px 8px rgba(31,106,140,.35);}
-.btn-hoje:hover{filter:brightness(1.1);}
+  color:var(--amber) !important;} /* fundo normal do botão; só a escrita em amarelo (no claro, um amarelo mais escuro para dar leitura) */
 .seletor-mes select{min-width:0;}
 /* Na tabela, a célula de ações continua sendo célula (com flex ela saía da linha:
    borda e botões desalinhados nas linhas mais altas). Os botões ficam centralizados. */
@@ -2043,7 +2042,7 @@ function lerValorMascarado(input) {
    O texto aparece sozinho no rodapé do menu lateral. */
 const APP_VERSION = "7.2"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Botão HOJE nos filtros de período: volta para o mês atual";
+const APP_VERSION_DESC = "Botão HOJE em destaque nos filtros de período; Dashboard sempre com despesas avulsas e filtro de tipo de despesa";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -2395,15 +2394,12 @@ async function renderDashboardView(container) {
   // Período: começa no mês atual; "Ano inteiro" pega de janeiro a dezembro do ano escolhido.
   let dashIni = currentMesRef(), dashFim = currentMesRef();
   const selCartao = el("select", { id: "dashCartao" });
-  // "__nenhum__" = ignora cartões por completo (só despesas avulsas), útil pra ver uma categoria isolada
-  selCartao.innerHTML = `<option value="">Todos os cartões</option><option value="__nenhum__">Sem cartão (só avulsas)</option>` + optionsHtml(cartoes, "id", "nome", "");
+  selCartao.innerHTML = `<option value="">Todos os cartões</option>` + optionsHtml(cartoes, "id", "nome", "");
   const selCategoria = el("select", { id: "dashCategoria" });
   selCategoria.innerHTML = `<option value="">Todas as categorias</option>` + optionsHtml(categorias.filter(c=>c.tipo==="despesa"), "id", "nome", "");
-  const inputIncluirAvulsas = el("input", { type: "checkbox", id: "dashIncluirAvulsas", checked: "checked", style: "width:16px; height:16px;" });
-  const chkIncluirAvulsas = el("label", { style: "display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text); white-space:nowrap;" }, [
-    inputIncluirAvulsas,
-    "Incluir despesas avulsas"
-  ]);
+  // Filtro do tipo de despesa: por padrão traz tudo (avulsas + cartão).
+  const selTipoDesp = el("select", { id: "dashTipoDespesa", title: "Quais despesas entram nos números" });
+  selTipoDesp.innerHTML = `<option value="">Todas as despesas</option><option value="avulsas">Só despesas avulsas</option><option value="cartao">Só cartão de crédito</option>`;
 
   const camposPeriodo = criarCamposPeriodo(filterBar, { ini: dashIni, fim: dashFim, aoMudar: (a, b) => { dashIni = a; dashFim = b; refresh(); } });
   filterBar.appendChild(el("button", { class: "btn-secondary", style: "font-size:12px; padding:6px 10px;", onclick: () => {
@@ -2412,7 +2408,7 @@ async function renderDashboardView(container) {
   } }, "Ano inteiro"));
   filterBar.appendChild(selCartao);
   filterBar.appendChild(selCategoria);
-  filterBar.appendChild(chkIncluirAvulsas);
+  filterBar.appendChild(selTipoDesp);
   container.appendChild(filterBar);
 
   const alertsWrap = el("div", { id: "dashAlerts", style: "margin-bottom:18px;" });
@@ -2444,7 +2440,9 @@ async function renderDashboardView(container) {
     const per = normalizarPeriodo(dashIni, dashFim);
     if (!per.ini) { per.ini = currentMesRef(); per.fim = per.ini; }
     const anoSel = per.fim.slice(0, 4); // os gráficos mostram o ano do fim do período
-    const semCartao = selCartao.value === "__nenhum__";
+    const tipoDesp = selTipoDesp.value;
+    const semCartao = tipoDesp === "avulsas"; // só avulsas: ignora os cartões
+    selCartao.disabled = semCartao;
     const cartaoFiltro = (selCartao.value && !semCartao) ? selCartao.value : null;
     const categoriaFiltro = selCategoria.value || null;
 
@@ -2455,7 +2453,7 @@ async function renderDashboardView(container) {
     const faturas = semCartao ? [] : await calcularFaturas({ cartaoIdFiltro: cartaoFiltro });
 
     const inSet = (mesRef) => mesesConsiderados.includes(mesRef);
-    const incluirAvulsas = inputIncluirAvulsas.checked;
+    const incluirAvulsas = tipoDesp !== "cartao"; // só cartão: tira as avulsas
 
     let receitasFiltradas = lancamentos.filter(l => l.tipo === "receita" && mesEfetivoDoLancamento(l) && inSet(mesEfetivoDoLancamento(l)));
     let despesasFiltradas = incluirAvulsas
@@ -2524,7 +2522,7 @@ async function renderDashboardView(container) {
   }
 
   [selCartao, selCategoria].forEach(s => s.addEventListener("change", refresh));
-  inputIncluirAvulsas.addEventListener("change", refresh);
+  selTipoDesp.addEventListener("change", refresh);
   await refresh();
 }
 
