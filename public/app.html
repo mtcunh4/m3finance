@@ -2050,9 +2050,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.7"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.8"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Pagamento de despesa recorrente mostra a parcela (ex.: 3 de 12), o que já foi pago e a próxima";
+const APP_VERSION_DESC = "Despesas e Lançamentos: parcela em destaque ao lado do nome das recorrentes";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -4773,8 +4773,10 @@ async function renderListaLancamentos(container, { tipos, titulo, incluirCartao 
       const dataLabel = l.data ? fmtDate(l.data) : mesRefLabel(l.mesReferencia);
       const tipoLabel = l.tipo === "compra_cartao" ? "Cartão" : l.isTransferencia ? "Transferência" : l.tipo === "receita" ? "Receita" : "Despesa";
       const tipoBadge = l.tipo === "compra_cartao" ? "blue" : l.isTransferencia ? "amber" : l.tipo === "receita" ? "blue" : "gray";
-      const numeracao = (l.recorrenciaId && l.totalParcelas) ? ` ${l.numero}/${l.totalParcelas}` : "";
-      const descComRecorrencia = l.recorrenciaId ? `🔁 ${l.descricao}${numeracao}` : l.descricao;
+      // Recorrente: 🔁 e a parcela em destaque ao lado do nome (ex.: 3/12, ou 7ª quando não tem prazo)
+      const descComRecorrencia = l.recorrenciaId
+        ? `🔁 ${l.descricao}${rotuloParcela(l) ? ` <span class="parcela-tag">${rotuloParcela(l)}</span>` : ""}`
+        : l.descricao;
       const statusEfetivado = l.tipo === "receita" ? "Recebido" : "Pago";
       const podeMarcar = l.tipo !== "compra_cartao" && !l.isTransferencia;
       // Igual a Contas a Pagar: despesa vencida mostra "Vencido" (amarelo) e o valor em vermelho;
