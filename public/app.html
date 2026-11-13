@@ -428,6 +428,10 @@ table.data-table tbody tr.row-avencer td:first-child{box-shadow: inset 3px 0 0 v
 
 .row-actions{display:flex; gap:6px; justify-content:flex-end;}
 .seletor-mes{display:inline-flex; gap:4px; align-items:center;}
+.info-parcela{border:1px solid var(--avencer-bar); background:var(--avencer-bg); border-radius:10px; padding:10px 12px; font-size:13px; display:flex; flex-direction:column; gap:3px;}
+.info-parcela-topo{font-weight:700; color:var(--avencer-badge);}
+.info-parcela-serie{color:var(--text-muted); font-size:12.5px;}
+.parcela-tag{display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:99px; background:var(--avencer-badge-bg); color:var(--avencer-badge); margin-left:4px;}
 .status-rapido{font-size:12.5px; padding:5px 8px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer;}
 .btn-hoje{font-size:12.5px !important; padding:7px 16px !important; font-weight:800 !important; text-transform:uppercase; letter-spacing:.08em;
   color:var(--amber) !important;} /* fundo normal do botão; só a escrita em amarelo (no claro, um amarelo mais escuro para dar leitura) */
@@ -2046,9 +2050,9 @@ function lerValorMascarado(input) {
 /* ---------- Versão do app (única fonte da verdade) ----------
    A cada atualização, muda o número aqui e a descrição curta.
    O texto aparece sozinho no rodapé do menu lateral. */
-const APP_VERSION = "7.6"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
+const APP_VERSION = "7.7"; // numeração: 6.7, 6.8, 6.9 e depois 7.0 (nunca 6.10)
 const APP_VERSION_DATA = "05/11/2026";
-const APP_VERSION_DESC = "Lançamentos: despesas a vencer em lilás, igual a Despesas e Contas a Pagar";
+const APP_VERSION_DESC = "Pagamento de despesa recorrente mostra a parcela (ex.: 3 de 12), o que já foi pago e a próxima";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("appVersionBadge");
   if (badge) {
@@ -5686,7 +5690,7 @@ async function renderContasPagarView(container) {
         const cat = categorias.find(c => c.id === l.categoriaId);
         const contaPg = l.contaId ? contas.find(c => c.id === l.contaId) : null;
         return {
-          tipo: "Despesa", descricao: l.descricao, categoriaCartao: cat ? cat.nome : "—",
+          tipo: "Despesa", descricao: l.recorrenciaId ? `🔁 ${l.descricao}${rotuloParcela(l) ? ` <span class="parcela-tag">${rotuloParcela(l)}</span>` : ""}` : l.descricao, categoriaCartao: cat ? cat.nome : "—",
           vencimento: l.data, valor: l.valor, pago: l.status === "Pago",
           parcial: l.status !== "Pago" && valorJaPago(l) > 0.005, jaPago: valorJaPago(l), restante: valorRestante(l),
           pagoInfo: l.status === "Pago" ? `${fmtDate(l.data)}${contaPg ? " · " + contaPg.nomeConta : ""}${l.pagoDe ? " · pago de " + escaparTexto(l.pagoDe) : ""}` : "",
@@ -5824,12 +5828,45 @@ function lerValorPagamento(item, idCampo) {
   return { v, quita: v >= restante - 0.005, novoTotalPago };
 }
 
+// Quadro "parcela" da despesa recorrente: qual parcela é, de quantas, frequência e quanto falta.
+function rotuloParcela(l) {
+  if (!l.recorrenciaId || !l.numero) return "";
+  return l.totalParcelas ? `${l.numero}/${l.totalParcelas}` : `${l.numero}ª`;
+}
+function infoRecorrenciaHtml(l) {
+  if (!l.recorrenciaId) return "";
+  const freq = (l.recorrenciaFrequencia || "Mensal").toLowerCase();
+  const linhaParcela = l.totalParcelas
+    ? `Parcela <strong>${l.numero} de ${l.totalParcelas}</strong>${l.totalParcelas - l.numero > 0 ? ` · faltam <strong>${l.totalParcelas - l.numero}</strong> depois desta` : " · <strong>última parcela</strong>"}`
+    : `Ocorrência nº <strong>${l.numero || "?"}</strong> · sem prazo definido (despesa fixa)`;
+  return `<div class="field full"><div class="info-parcela">
+      <div class="info-parcela-topo">🔁 Despesa recorrente · ${freq}</div>
+      <div>${linhaParcela}</div>
+      <div class="info-parcela-serie" id="dp_serie">Carregando as outras parcelas…</div>
+    </div></div>`;
+}
+// Completa o quadro com o que já foi pago da série e a próxima parcela.
+async function completarInfoRecorrencia(l) {
+  const alvo = document.getElementById("dp_serie");
+  if (!alvo || !l.recorrenciaId) return;
+  try {
+    const serie = (await DB.getAll("lancamentos")).filter(x => x.recorrenciaId === l.recorrenciaId)
+      .sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+    const pagas = serie.filter(x => x.status === "Pago").length;
+    const proxima = serie.find(x => x.id !== l.id && (x.data || "") > (l.data || "") && x.status !== "Pago");
+    alvo.innerHTML = `Já pagas: <strong>${pagas}${l.totalParcelas ? ` de ${l.totalParcelas}` : ""}</strong>` +
+      (proxima ? ` · próxima: ${fmtDate(proxima.data)} (${fmtMoney(proxima.valor)})` : "");
+  } catch (e) { alvo.textContent = ""; }
+}
+
 function abrirPagarDespesaRapido(lancamento, contas) {
   Modal.open({
     title: valorJaPago(lancamento) > 0.005 ? "Pagar o restante da despesa" : "Marcar despesa como paga",
-    sub: lancamento.descricao,
+    sub: lancamento.descricao + (rotuloParcela(lancamento) ? ` — parcela ${rotuloParcela(lancamento)}` : ""),
+    onMount: () => completarInfoRecorrencia(lancamento),
     bodyHtml: `
       <div class="form-grid">
+        ${infoRecorrenciaHtml(lancamento)}
         ${htmlValorPagamento(lancamento, "dp_valor")}
         <div class="field"><label>Data do pagamento</label><input id="dp_data" type="date" value="${valorJaPago(lancamento) > 0.005 ? todayISO() : (lancamento.data || todayISO())}"></div>
         ${campoContaPagamentoHtml("dp_pagoDe", lancamento.pagoDe || "")}
